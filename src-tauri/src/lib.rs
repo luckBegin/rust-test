@@ -1,16 +1,21 @@
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use async_hid::DeviceId;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle
+    AppHandle,
 };
-mod command;
-mod util;
+use once_cell::unsync::Lazy;
+use crate::util::km_detect::watch_device;
+
+pub mod command;
+pub mod util;
 
 pub static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    tauri::async_runtime::spawn(async { watch_device().await});
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
