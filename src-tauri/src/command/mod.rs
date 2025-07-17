@@ -5,6 +5,8 @@ use tauri::Manager;
 use tauri::Emitter;
 use crate::GLOBAL_APP_HANDLE;
 use crate::util::km_detect::{detect, HidInfo};
+use get_if_addrs::get_if_addrs;
+pub mod capture;
 
 #[tauri::command]
 pub async fn devices() -> Result<Vec<HidInfo>, ()> {
@@ -12,10 +14,12 @@ pub async fn devices() -> Result<Vec<HidInfo>, ()> {
     Ok(devices)
 }
 
+#[derive(Serialize, Clone)]
 pub enum RustEventType {
     DeviceChange,
+    Download,
 }
-
+#[derive(Serialize, Clone)]
 pub struct RustEvent<T> {
     pub evt_type: RustEventType,
     pub evt_data: T,
@@ -28,7 +32,18 @@ impl<T> RustEvent<T> {
 }
 
 #[tauri::command]
-pub async fn notify<T>(evt: RustEvent<T>) {
+pub async fn notify<T>(evt: RustEvent<T>)
+where
+    T: Clone + Serialize,
+{
     if let Some(handle) = GLOBAL_APP_HANDLE.get() {
+        handle.emit("notify", evt).unwrap();
+    }
+}
+
+#[tauri::command]
+pub async fn find_lan_device() {
+    for iface in get_if_addrs::get_if_addrs().unwrap() {
+        println!("{:#?}", iface.addr.ip());
     }
 }

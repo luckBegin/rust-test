@@ -11,15 +11,24 @@ use crate::util::km_detect::watch_device;
 
 pub mod command;
 pub mod util;
+pub mod types;
+pub mod GLOBAL;
+pub mod streaming;
 
 pub static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::async_runtime::spawn(async { watch_device().await});
+    tauri::async_runtime::spawn(async { watch_device().await });
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            command::devices
+            command::devices,
+            command::find_lan_device,
+            command::capture::check_if_ffmpeg,
+            command::capture::download_ffmpeg,
+            command::capture::start_live_server,
+            command::capture::start_live_server,
+            command::capture::end_live_server,
         ])
         .setup(init_app)
         .run(tauri::generate_context!())

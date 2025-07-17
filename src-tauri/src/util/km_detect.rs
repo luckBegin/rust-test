@@ -8,7 +8,7 @@ use crate::{command};
 use crate::command::{RustEvent, RustEventType};
 use crate::GLOBAL_APP_HANDLE;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct HidInfo {
     pub vid: u16,
     pub pid: u16,
@@ -59,7 +59,6 @@ pub async fn watch_device() {
                                 name: device.name.clone(),
                             });
                         }
-
                         let list: Vec<HidInfo> = map.into_values().collect();
                         command::notify(RustEvent {
                             evt_type: RustEventType::DeviceChange,
