@@ -7,6 +7,7 @@ use tauri::{
     AppHandle,
 };
 use once_cell::unsync::Lazy;
+use rdev::{Event, listen};
 use crate::util::km_detect::watch_device;
 
 pub mod command;
@@ -14,6 +15,7 @@ pub mod util;
 pub mod types;
 pub mod GLOBAL;
 pub mod streaming;
+pub mod keyboard_mouse;
 
 pub static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,6 +31,7 @@ pub fn run() {
             command::capture::start_live_server,
             command::capture::start_live_server,
             command::capture::end_live_server,
+            command::km_capture::start_km_capture,
         ])
         .setup(init_app)
         .run(tauri::generate_context!())

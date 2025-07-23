@@ -16,7 +16,7 @@ pub fn start_ffmpeg_udp() -> Child {
             "-f", "avfoundation",
             "-capture_cursor", "1",
             "-framerate", "30",
-            "-i", "1",
+            "-i", "0",
             "-c:v", "mpeg1video",
             "-b:v", "1000k",
             "-f", "mpegts",

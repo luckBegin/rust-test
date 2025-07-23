@@ -7,7 +7,7 @@ use crate::GLOBAL_APP_HANDLE;
 use crate::util::km_detect::{detect, HidInfo};
 use get_if_addrs::get_if_addrs;
 pub mod capture;
-
+pub mod km_capture;
 #[tauri::command]
 pub async fn devices() -> Result<Vec<HidInfo>, ()> {
     let devices = detect().await;

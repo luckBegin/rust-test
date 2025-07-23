@@ -85,4 +85,8 @@ export class AppComponent implements OnInit {
 	}
 
 	public loadingShow = false;
+
+	public kmCapture() {
+		invoke("start_km_capture").then();
+	}
 }

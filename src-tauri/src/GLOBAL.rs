@@ -13,6 +13,7 @@ pub static APP_FOLDER: &str = "Keychron_Screen";
 pub static LIVE_ADDR_UDP: &str = "0.0.0.0:30002";
 pub static LIVE_ADDR_WS: &str = "0.0.0.0:30003";
 pub static FFMPEG_UP_ADDR: &str = "udp://127.0.0.1:30002";
+pub static KM_ADDR_UDP: &str = "0.0.0.0:30004";
 
 #[cfg(target_os = "macos")]
 pub const FFMPEG_DOWNLOAD_URL: &str = "http://192.168.0.28:4001/api/ffmpeg-mac.zip";
