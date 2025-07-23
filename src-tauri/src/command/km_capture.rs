@@ -33,6 +33,7 @@ pub struct MouseData {
     y: i64,
 }
 
+#[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn start_km_capture() {
     let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
@@ -73,6 +74,11 @@ pub async fn start_km_capture() {
     });
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn start_km_capture() {
+    println!("KM capture not supported on Windows.");
+}
 
 #[tauri::command]
 pub fn start_km_udp_server() {
