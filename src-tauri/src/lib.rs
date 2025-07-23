@@ -32,6 +32,7 @@ pub fn run() {
             command::capture::start_live_server,
             command::capture::end_live_server,
             command::km_capture::start_km_capture,
+            command::km_capture::start_km_udp_server,
         ])
         .setup(init_app)
         .run(tauri::generate_context!())

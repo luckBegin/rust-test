@@ -35,6 +35,7 @@ pub struct MouseData {
 
 #[tauri::command]
 pub async fn start_km_capture() {
+    let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
     std::thread::spawn(move || {
         CGEventTap::with_enabled(
             CGEventTapLocation::HID,
@@ -53,7 +54,7 @@ pub async fn start_km_capture() {
                 };
 
                 if let Ok(json) = serde_json::to_string(&evt) {
-                    match socket.send(json.as_bytes()) {
+                    match socket.send_to(json.as_bytes(), "") {
                         Ok(_) => {
                             println!("x: {:?}, y: {:?}", dx, dy);
                         }
@@ -73,6 +74,22 @@ pub async fn start_km_capture() {
 }
 
 
-async fn start_km_udp_server() {}
-
+#[tauri::command]
+pub fn start_km_udp_server() {
+    std::thread::spawn(|| {
+        let socket = UdpSocket::bind(KM_ADDR_UDP).expect("无法绑定 UDP 端口");
+        let mut buf = [0u8; 1024];
+        loop {
+            match socket.recv_from(&mut buf) {
+                Ok((size, src)) => {
+                    let msg = String::from_utf8_lossy(&buf[..size]);
+                    println!("收到来自 {} 的消息: {}", src, msg);
+                }
+                Err(e) => {
+                    eprintln!("UDP 接收失败: {:?}", e);
+                }
+            }
+        }
+    });
+}
 pub fn receive_km_event() {}

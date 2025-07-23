@@ -89,4 +89,8 @@ export class AppComponent implements OnInit {
 	public kmCapture() {
 		invoke("start_km_capture").then();
 	}
+
+	public kmReceive() {
+		invoke("start_km_udp_server").then();
+	}
 }
