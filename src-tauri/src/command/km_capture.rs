@@ -56,7 +56,7 @@ pub async fn start_km_capture() {
                 };
 
                 if let Ok(json) = serde_json::to_string(&evt) {
-                    match socket.send_to(json.as_bytes(), "") {
+                    match socket.send_to(json.as_bytes(), "192.168.0.28:30004") {
                         Ok(_) => {
                             println!("x: {:?}, y: {:?}", dx, dy);
                         }
