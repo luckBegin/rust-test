@@ -38,15 +38,14 @@ impl ScreenCap {
 #[tauri::command]
 pub fn scp_check_if() -> ScreenCap {
     return ScreenCap::new(
-        scap::is_supported(),
-        scap::has_permission(),
+        false ,false,
     );
 }
 
 
 #[tauri::command]
 pub fn scp_request_permission() -> bool {
-    return scap::request_permission();
+    return true
 }
 
 #[tauri::command]
