@@ -1,11 +1,12 @@
 use std::net::UdpSocket;
 use rdev::{listen, Event, EventType, Key};
 use crate::keyboard_mouse::{km_listen};
-
+#[cfg(target_os = "macos")]
 use core_graphics::event::{
     CGEventTap, CGEventTapLocation, CGEventTapPlacement, CGEventTapOptions, CGEventType, CallbackResult,
     CGEventField, EventField,
 };
+#[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
 use serde::Serialize;
 use tokio::sync::oneshot;
