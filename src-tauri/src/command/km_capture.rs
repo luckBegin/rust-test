@@ -134,9 +134,13 @@ fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> 
 #[cfg(target_os = "windows")]
 fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) {}
 
+#[cfg(target_os = "macos")]
 fn mouse_action() -> CallbackResult {
     CallbackResult::Keep
 }
+
+#[cfg(target_os = "windows")]
+fn mouse_action() {}
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn start_km_capture() {
