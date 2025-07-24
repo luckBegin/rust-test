@@ -13,13 +13,13 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use crate::GLOBAL::KM_ADDR_UDP;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum KMEventType {
     Mouse,
     Keyboard,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct KmEvent<T>
 where
     T: Serialize,
@@ -28,7 +28,7 @@ where
     evt_data: T,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MouseData {
     x: i64,
     y: i64,
@@ -90,8 +90,16 @@ pub fn start_km_udp_server() {
             match socket.recv_from(&mut buf) {
                 Ok((size, src)) => {
                     let msg = String::from_utf8_lossy(&buf[..size]);
-                    let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg); // 注意这里传 &msg
-                    println!("收到来自 {} 的消息: {}", src, msg);
+                    let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg);
+
+                    match evt_data {
+                        Ok(evt) => {
+                            println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, evt.evt_data);
+                        }
+                        Err(err) => {
+                            println!("Parse Error, {:?}", err)
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("UDP 接收失败: {:?}", e);
