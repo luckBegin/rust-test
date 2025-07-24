@@ -1075,7 +1075,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.8",
 ]
 
 [[package]]
@@ -1177,6 +1177,27 @@ name = "endi"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3d8a32ae18130a3c84dd492d4215c3d913c3b07c6b63c2eb3eb7ff1101ab7bf"
+
+[[package]]
+name = "enigo"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71744ff36f35a4276e8827add8102d0e792378c574fd93cb4e1c8e0505f96b7c"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-graphics 0.25.0",
+ "foreign-types-shared 0.3.1",
+ "libc",
+ "log",
+ "nom",
+ "objc2 0.6.1",
+ "objc2-app-kit 0.3.1",
+ "objc2-foundation 0.3.1",
+ "windows",
+ "x11rb",
+ "xkbcommon",
+ "xkeysym",
+]
 
 [[package]]
 name = "enum-map"
@@ -2741,6 +2762,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 
 [[package]]
+name = "nom"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "num-conv"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3986,6 +4016,7 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-graphics 0.25.0",
  "dirs",
+ "enigo",
  "futures",
  "futures-lite",
  "futures-util",
@@ -6620,6 +6651,17 @@ name = "xcursor"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
+
+[[package]]
+name = "xkbcommon"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d66ca9352cbd4eecbbc40871d8a11b4ac8107cfc528a6e14d7c19c69d0e1ac9"
+dependencies = [
+ "libc",
+ "memmap2",
+ "xkeysym",
+]
 
 [[package]]
 name = "xkbcommon-dl"

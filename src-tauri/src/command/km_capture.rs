@@ -1,6 +1,12 @@
 use std::net::UdpSocket;
 use rdev::{listen, Event, EventType, Key};
 use crate::keyboard_mouse::{km_listen};
+use enigo::*;
+use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
+use crate::GLOBAL::KM_ADDR_UDP;
+
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
     CGEventTap, CGEventTapLocation, CGEventTapPlacement, CGEventTapOptions, CGEventType, CallbackResult,
@@ -8,10 +14,7 @@ use core_graphics::event::{
 };
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
-use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
-use crate::GLOBAL::KM_ADDR_UDP;
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KMEventType {
@@ -30,8 +33,8 @@ where
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MouseData {
-    x: i64,
-    y: i64,
+    x: i32,
+    y: i32,
 }
 
 #[cfg(target_os = "macos")]
@@ -50,8 +53,8 @@ pub async fn start_km_capture() {
                 let evt = KmEvent {
                     evt_type: KMEventType::Mouse,
                     evt_data: MouseData {
-                        x: dx,
-                        y: dy,
+                        x: dx as i32,
+                        y: dy as i32,
                     },
                 };
 
@@ -86,15 +89,18 @@ pub fn start_km_udp_server() {
     std::thread::spawn(|| {
         let socket = UdpSocket::bind(KM_ADDR_UDP).expect("无法绑定 UDP 端口");
         let mut buf = [0u8; 1024];
+        let setting = Settings::default();
+        let mut enigo = Enigo::new(&setting).unwrap();
         loop {
             match socket.recv_from(&mut buf) {
                 Ok((size, src)) => {
                     let msg = String::from_utf8_lossy(&buf[..size]);
                     let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg);
-
                     match evt_data {
                         Ok(evt) => {
-                            println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, evt.evt_data);
+                            let data = evt.evt_data;
+                            enigo.move_mouse(data.x, data.y, Coordinate::Rel);
+                            println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, data);
                         }
                         Err(err) => {
                             println!("Parse Error, {:?}", err)
