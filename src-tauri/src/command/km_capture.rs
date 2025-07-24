@@ -90,6 +90,7 @@ pub async fn start_km_capture() {
 
 pub static mouse_pos: Lazy<Mutex<i32>> = Lazy::new(|| Mutex::new(0));
 
+#[cfg(target_os = "macos")]
 fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> CallbackResult {
     let (width, height) = get_monitor_size();
     let delta = 3f64;
@@ -129,6 +130,9 @@ fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> 
     }
     CallbackResult::Drop
 }
+
+#[cfg(target_os = "windows")]
+fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) {}
 
 fn mouse_action() -> CallbackResult {
     CallbackResult::Keep
