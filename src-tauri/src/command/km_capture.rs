@@ -16,7 +16,9 @@ use core_graphics::event::{
 };
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
+#[cfg(target_os = "macos")]
 use core_graphics::display::CGPoint;
+#[cfg(target_os = "macos")]
 use objc::runtime::protocol_conformsToProtocol;
 use resolution::current_resolution;
 
