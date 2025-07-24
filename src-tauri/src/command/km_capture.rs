@@ -8,18 +8,18 @@ use core_graphics::event::{
 };
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use crate::GLOBAL::KM_ADDR_UDP;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub enum KMEventType {
     Mouse,
     Keyboard,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct KmEvent<T>
 where
     T: Serialize,
@@ -28,7 +28,7 @@ where
     evt_data: T,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MouseData {
     x: i64,
     y: i64,
@@ -90,6 +90,7 @@ pub fn start_km_udp_server() {
             match socket.recv_from(&mut buf) {
                 Ok((size, src)) => {
                     let msg = String::from_utf8_lossy(&buf[..size]);
+                    let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg); // 注意这里传 &msg
                     println!("收到来自 {} 的消息: {}", src, msg);
                 }
                 Err(e) => {

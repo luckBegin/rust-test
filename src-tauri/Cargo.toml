@@ -38,6 +38,7 @@ async-trait = "0.1.88"
 lazy_static = "1.5.0"
 futures = "0.3.31"
 rdev = { git = "https://github.com/fufesou/rdev" }
+winit = "0.30.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25.0"
