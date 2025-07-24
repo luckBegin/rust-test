@@ -44,7 +44,7 @@ pub fn scp_check_if() -> ScreenCap {
 
 
 #[tauri::command]
-pub fn scp_request_permission() -> bool {
+    pub fn scp_request_permission() -> bool {
     return true
 }
 
