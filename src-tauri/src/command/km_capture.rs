@@ -14,6 +14,10 @@ use core_graphics::event::{
     CGEventTap, CGEventTapLocation, CGEventTapPlacement, CGEventTapOptions, CGEventType, CallbackResult,
     CGEventField, EventField,
 };
+
+#[cfg(target_os = "macos")]
+use core_graphics::display::{CGMainDisplayID, CGDisplay};
+
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
 #[cfg(target_os = "macos")]
@@ -71,7 +75,10 @@ pub async fn start_km_capture() {
                         let dx = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_X);
                         let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
                         let CGPoint { x: cx, y: cy } = event.location();
-                        mouse_move_handle(dx as i32, dy as i32, cx, cy, &socket)
+                        if (should_send_evt(cx, cy)) {
+                            return mouse_move_handle(dx as i32, dy as i32, cx, cy, &socket)
+                        };
+                        CallbackResult::Keep
                     }
                     CGEventType::ScrollWheel
                     | CGEventType::LeftMouseDown
@@ -88,20 +95,35 @@ pub async fn start_km_capture() {
     });
 }
 
-pub static mouse_pos: Lazy<Mutex<i32>> = Lazy::new(|| Mutex::new(0));
+pub static MOUSE_POS: Lazy<Mutex<i32>> = Lazy::new(|| Mutex::new(0));
+pub static CURSOR_HIDE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
+fn should_send_evt(cx: f64, cy: f64) -> bool {
+    let mut should_send_evt: bool = false;
+    let (width, height) = get_monitor_size();
+    let delta = 3f64;
+    if (*MOUSE_POS.lock().unwrap() == 0) {
+        if (cx < delta) {
+            hide_cursor();
+            *CURSOR_HIDE.lock().unwrap() = true;
+            should_send_evt = true;
+        } else {
+            if (*CURSOR_HIDE.lock().unwrap()) {
+                show_cursor();
+                *CURSOR_HIDE.lock().unwrap() = false;
+            }
+        }
+    } else {
+        should_send_evt = true
+    }
+
+    should_send_evt
+}
+
 
 #[cfg(target_os = "macos")]
 fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> CallbackResult {
     let (width, height) = get_monitor_size();
-    let delta = 3f64;
-    println!("Diff, {:?}, width: {:?}, pos: {:?}", cx, width, *mouse_pos.lock().unwrap());
-    if (cx + delta >= width as f64 || cx >= delta) {
-        if (*mouse_pos.lock().unwrap() != 0) {
-            *mouse_pos.lock().unwrap() += dx;
-        }
-        return CallbackResult::Keep;
-    }
-
     let mut evt = KmEvent {
         evt_type: KMEventType::MouseMove,
         evt_data: MouseData {
@@ -112,21 +134,19 @@ fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> 
         },
     };
 
-    if (*mouse_pos.lock().unwrap() == 0) {
-        evt.evt_type = KMEventType::InitMouseMove
-    }
-
-    if let Ok(json) = serde_json::to_string(&evt) {
-        match socket.send_to(json.as_bytes(), "192.168.0.28:30004") {
-            Ok(_) => {
-                *mouse_pos.lock().unwrap() += dx;
-
-                println!("x: {:?}, y: {:?}, diff {:?}", dx, dy, *mouse_pos.lock().unwrap());
+    if (*MOUSE_POS.lock().unwrap() == 0) {
+        evt.evt_type = KMEventType::InitMouseMove;
+        if let Ok(json) = serde_json::to_string(&evt) {
+            match socket.send_to(json.as_bytes(), "192.168.0.28:30004") {
+                Ok(_) => {
+                    *MOUSE_POS.lock().unwrap() += dx;
+                    println!("x: {:?}, y: {:?}, diff {:?}", dx, dy, *MOUSE_POS.lock().unwrap());
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                }
             }
-            Err(e) => {
-                println!("{:?}", e);
-            }
-        }
+        };
     }
     CallbackResult::Drop
 }
@@ -193,4 +213,21 @@ pub fn receive_km_event() {}
 
 pub fn get_monitor_size() -> (i32, i32) {
     current_resolution().expect("Resolution Failed")
+}
+
+#[cfg(target_os = "macos")]
+fn hide_cursor() {
+    unsafe {
+        let main_display = CGDisplay { id: CGMainDisplayID() };
+        main_display.hide_cursor().unwrap();
+        println!("hide mouse")
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn show_cursor() {
+    unsafe {
+        let main_display = CGDisplay { id: CGMainDisplayID() };
+        main_display.show_cursor().unwrap();
+    }
 }
