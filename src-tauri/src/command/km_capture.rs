@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 use rdev::{listen, Event, EventType, Key};
@@ -8,6 +9,7 @@ use tokio::task::JoinHandle;
 use crate::GLOBAL::KM_ADDR_UDP;
 use once_cell::sync::Lazy;
 use mouse_position::mouse_position::Mouse as OtherMouse;
+use std::io::ErrorKind;
 
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
@@ -25,6 +27,8 @@ use core_graphics::display::CGPoint;
 #[cfg(target_os = "macos")]
 use objc::runtime::protocol_conformsToProtocol;
 use resolution::current_resolution;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KMEventType {
@@ -95,22 +99,6 @@ pub async fn start_km_capture() {
                 CFRunLoop::run_current()
             },
         ).expect("Failed to install event tap");
-    });
-
-    let socket_clone2 = Arc::clone(&socket) ;
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 1024];
-        loop {
-            match &socket_clone2.lock().unwrap().recv_from(&mut buf) {
-                Ok((size, addr)) => {
-                    println!("Received UDP message from {}", addr);
-                }
-                Err(e) => {
-                    eprintln!("Socket receive error: {:?}", e);
-                    break;
-                }
-            }
-        }
     });
 }
 
@@ -277,3 +265,58 @@ fn hide_cursor() {}
 
 #[cfg(target_os = "windows")]
 fn show_cursor() {}
+
+
+
+async fn run_server() -> Result<(), Box<dyn Error>> {
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    println!("Server listening on 127.0.0.1:8080");
+
+    loop {
+        let (mut socket, addr) = listener.accept().await?;
+        println!("New client: {}", addr);
+
+        // 异步处理每个客户端连接
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            loop {
+                match socket.read(&mut buf).await {
+                    Ok(0) => {
+                        println!("Client {} disconnected", addr);
+                        break;
+                    }
+                    Ok(n) => {
+                        let received = String::from_utf8_lossy(&buf[..n]);
+                        println!("Received from {}: {}", addr, received);
+
+                        // 回写收到的消息（echo）
+                        if let Err(e) = socket.write_all(received.as_bytes()).await {
+                            eprintln!("Failed to send response: {}", e);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading from {}: {}", addr, e);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+}
+
+async fn run_client() -> Result<(), Box<dyn Error>> {
+    let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    println!("Connected to server at 127.0.0.1:8080");
+
+    let msg = "Hello from client!";
+    stream.write_all(msg.as_bytes()).await?;
+    println!("Sent message: {}", msg);
+
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf).await?;
+    let response = String::from_utf8_lossy(&buf[..n]);
+    println!("Received echo: {}", response);
+
+    Ok(())
+}
