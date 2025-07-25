@@ -33,6 +33,7 @@ pub enum KMEventType {
     Keyboard,
     MouseClickLeft,
     MouseClickRight,
+    MouseBack
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -159,7 +160,7 @@ fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> 
         match socket.send_to(json.as_bytes(), "192.168.0.28:30004") {
             Ok(_) => {
                 *MOUSE_POS.lock().unwrap() += dx;
-                println!("x: {:?}, y: {:?}, diff {:?}", dx, dy, *MOUSE_POS.lock().unwrap());
+                // println!("x: {:?}, y: {:?}, diff {:?}", dx, dy, *MOUSE_POS.lock().unwrap());
             }
             Err(e) => {
                 println!("Send Error: {:?}", e);
@@ -209,7 +210,7 @@ pub fn start_km_udp_server() {
                                 }
                                 KMEventType::MouseMove => {
                                     enigo.move_mouse(data.x, data.y, Coordinate::Rel);
-                                    handle_slave_mouse(&socket)
+                                    handle_slave_mouse(&socket);
                                     println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, data);
                                 }
                                 _ => {
