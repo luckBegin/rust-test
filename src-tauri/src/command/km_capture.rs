@@ -1,14 +1,14 @@
 use std::net::UdpSocket;
 use std::sync::Mutex;
-use rdev::{listen, Event, EventType, Key};
 use crate::keyboard_mouse::{km_listen};
 use enigo::*;
+use enigo::Mouse;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use crate::GLOBAL::KM_ADDR_UDP;
 use once_cell::sync::Lazy;
-
+use mouse_position::mouse_position::Mouse as OtherMouse;
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
     CGEventTap, CGEventTapLocation, CGEventTapPlacement, CGEventTapOptions, CGEventType, CallbackResult,
@@ -33,6 +33,7 @@ pub enum KMEventType {
     Keyboard,
     MouseClickLeft,
     MouseClickRight,
+    MouseBack
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -191,6 +192,7 @@ pub fn start_km_udp_server() {
                                 }
                                 KMEventType::MouseMove => {
                                     enigo.move_mouse(data.x, data.y, Coordinate::Rel);
+                                    handle_slave_mouse(&socket) ;
                                     println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, data);
                                 }
                                 _ => {
@@ -209,6 +211,24 @@ pub fn start_km_udp_server() {
             }
         }
     });
+}
+
+fn handle_slave_mouse (udp_socket: &UdpSocket) {
+    if let OtherMouse::Position {x,y} = OtherMouse::get_mouse_position() {
+        let (width, height) = current_resolution().unwrap();
+        if( x >= width - 3 ) {
+            let mut evt = KmEvent {
+                evt_type: KMEventType::MouseBack,
+                evt_data: MouseData {
+                    x, y,
+                    x_ratio: x as f32  / width as f32,
+                    y_ratio: y as f32 / height as f32,
+                },
+            };
+            println!("Border Detect") ;
+            udp_socket.send_to(&serde_json::to_string(&evt).unwrap().as_bytes(), "192.168.0.200:30004").unwrap();
+        }
+    }
 }
 pub fn receive_km_event() {}
 

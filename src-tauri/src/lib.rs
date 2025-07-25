@@ -1,13 +1,9 @@
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use async_hid::DeviceId;
+use std::sync::{OnceLock};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle,
 };
-use once_cell::unsync::Lazy;
-use rdev::{Event, listen};
 use crate::util::km_detect::watch_device;
 
 pub mod command;
