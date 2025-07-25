@@ -1,14 +1,14 @@
 use std::net::UdpSocket;
-use std::sync::Mutex;
-use crate::keyboard_mouse::{km_listen};
+use std::sync::{Arc, Mutex};
+use rdev::{listen, Event, EventType, Key};
 use enigo::*;
-use enigo::Mouse;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use crate::GLOBAL::KM_ADDR_UDP;
 use once_cell::sync::Lazy;
 use mouse_position::mouse_position::Mouse as OtherMouse;
+
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
     CGEventTap, CGEventTapLocation, CGEventTapPlacement, CGEventTapOptions, CGEventType, CallbackResult,
@@ -33,7 +33,6 @@ pub enum KMEventType {
     Keyboard,
     MouseClickLeft,
     MouseClickRight,
-    MouseBack
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -56,7 +55,9 @@ pub struct MouseData {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn start_km_capture() {
-    let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+    let socket = Arc::new(Mutex::new(UdpSocket::bind(KM_ADDR_UDP).unwrap()));
+    socket.lock().unwrap().set_nonblocking(true).unwrap();
+    let socket_1 = Arc::clone(&socket);
     std::thread::spawn(move || {
         CGEventTap::with_enabled(
             CGEventTapLocation::HID,
@@ -77,7 +78,7 @@ pub async fn start_km_capture() {
                         let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
                         let CGPoint { x: cx, y: cy } = event.location();
                         if (should_send_evt(cx, cy)) {
-                            return mouse_move_handle(dx as i32, dy as i32, cx, cy, &socket)
+                            return mouse_move_handle(dx as i32, dy as i32, cx, cy, &socket_1.lock().unwrap());
                         };
                         CallbackResult::Keep
                     }
@@ -93,6 +94,22 @@ pub async fn start_km_capture() {
                 CFRunLoop::run_current()
             },
         ).expect("Failed to install event tap");
+    });
+
+    let socket_clone2 = Arc::clone(&socket) ;
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 1024];
+        loop {
+            match &socket_clone2.lock().unwrap().recv_from(&mut buf) {
+                Ok((size, addr)) => {
+                    println!("Received UDP message from {}", addr);
+                }
+                Err(e) => {
+                    eprintln!("Socket receive error: {:?}", e);
+                    break;
+                }
+            }
+        }
     });
 }
 
@@ -130,25 +147,25 @@ fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> 
         evt_data: MouseData {
             x: dx as i32,
             y: dy as i32,
-            x_ratio: dx as f32 / width as f32,
-            y_ratio: dy as f32 / height as f32,
+            x_ratio: cx as f32 / width as f32,
+            y_ratio: cy as f32 / height as f32,
         },
     };
 
     if (*MOUSE_POS.lock().unwrap() == 0) {
         evt.evt_type = KMEventType::InitMouseMove;
-        if let Ok(json) = serde_json::to_string(&evt) {
-            match socket.send_to(json.as_bytes(), "192.168.0.28:30004") {
-                Ok(_) => {
-                    *MOUSE_POS.lock().unwrap() += dx;
-                    println!("x: {:?}, y: {:?}, diff {:?}", dx, dy, *MOUSE_POS.lock().unwrap());
-                }
-                Err(e) => {
-                    println!("{:?}", e);
-                }
-            }
-        };
     }
+    if let Ok(json) = serde_json::to_string(&evt) {
+        match socket.send_to(json.as_bytes(), "192.168.0.28:30004") {
+            Ok(_) => {
+                *MOUSE_POS.lock().unwrap() += dx;
+                println!("x: {:?}, y: {:?}, diff {:?}", dx, dy, *MOUSE_POS.lock().unwrap());
+            }
+            Err(e) => {
+                println!("Send Error: {:?}", e);
+            }
+        }
+    };
     CallbackResult::Drop
 }
 
@@ -192,7 +209,7 @@ pub fn start_km_udp_server() {
                                 }
                                 KMEventType::MouseMove => {
                                     enigo.move_mouse(data.x, data.y, Coordinate::Rel);
-                                    handle_slave_mouse(&socket) ;
+                                    handle_slave_mouse(&socket)
                                     println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, data);
                                 }
                                 _ => {
@@ -255,7 +272,7 @@ fn show_cursor() {
 
 
 #[cfg(target_os = "windows")]
-fn hide_cursor () {}
+fn hide_cursor() {}
 
 #[cfg(target_os = "windows")]
-fn show_cursor () {}
+fn show_cursor() {}
