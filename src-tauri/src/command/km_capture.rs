@@ -186,7 +186,7 @@ pub fn start_km_udp_server() {
                             match evt.evt_type {
                                 KMEventType::InitMouseMove => {
                                     let y = (&data.y_ratio * height as f32).round() as i32;
-                                    println!("收到来自 {} 的消息: Y: {:?}", y);
+                                    println!("收到消息: Y: {:?}", y);
                                     enigo.move_mouse(width, y, Coordinate::Abs);
                                 }
                                 KMEventType::MouseMove => {
