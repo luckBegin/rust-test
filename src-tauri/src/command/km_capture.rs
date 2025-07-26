@@ -29,6 +29,7 @@ use objc::runtime::protocol_conformsToProtocol;
 use resolution::current_resolution;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use crate::service::tcp::tcp_server::TcpServer;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KMEventType {
@@ -171,6 +172,8 @@ fn mouse_action() {}
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn start_km_capture() {
+    let socket = TcpServer::new("127.0.0.1:12345");
+    socket.run().await;
     println!("KM capture not supported on Windows.");
 }
 
@@ -265,58 +268,3 @@ fn hide_cursor() {}
 
 #[cfg(target_os = "windows")]
 fn show_cursor() {}
-
-
-
-async fn run_server() -> Result<(), Box<dyn Error>> {
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
-    println!("Server listening on 127.0.0.1:8080");
-
-    loop {
-        let (mut socket, addr) = listener.accept().await?;
-        println!("New client: {}", addr);
-
-        // 异步处理每个客户端连接
-        tokio::spawn(async move {
-            let mut buf = [0u8; 1024];
-            loop {
-                match socket.read(&mut buf).await {
-                    Ok(0) => {
-                        println!("Client {} disconnected", addr);
-                        break;
-                    }
-                    Ok(n) => {
-                        let received = String::from_utf8_lossy(&buf[..n]);
-                        println!("Received from {}: {}", addr, received);
-
-                        // 回写收到的消息（echo）
-                        if let Err(e) = socket.write_all(received.as_bytes()).await {
-                            eprintln!("Failed to send response: {}", e);
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Error reading from {}: {}", addr, e);
-                        break;
-                    }
-                }
-            }
-        });
-    }
-}
-
-async fn run_client() -> Result<(), Box<dyn Error>> {
-    let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
-    println!("Connected to server at 127.0.0.1:8080");
-
-    let msg = "Hello from client!";
-    stream.write_all(msg.as_bytes()).await?;
-    println!("Sent message: {}", msg);
-
-    let mut buf = [0u8; 1024];
-    let n = stream.read(&mut buf).await?;
-    let response = String::from_utf8_lossy(&buf[..n]);
-    println!("Received echo: {}", response);
-
-    Ok(())
-}

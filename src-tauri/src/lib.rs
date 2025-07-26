@@ -12,7 +12,7 @@ pub mod types;
 pub mod GLOBAL;
 pub mod streaming;
 pub mod keyboard_mouse;
-
+pub mod service;
 pub static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
