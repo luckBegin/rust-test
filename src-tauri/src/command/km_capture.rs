@@ -192,65 +192,63 @@ pub async fn start_km_capture() {
 }
 
 #[tauri::command]
-pub fn start_km_udp_server() {
-    tokio::spawn(async move {
-        // let socket = UdpSocket::bind(KM_ADDR_UDP).expect("无法绑定 UDP 端口");
-        let mut socket = TcpClient::connect("0.0.0.0:12345".to_string()).await.unwrap();
-        let mut buffer = vec![0u8; 1024];
-        match socket.receive(&mut buffer).await {
-            Ok(n) if n == 0 => {
-                println!("服务器关闭连接");
-            }
-            Ok(n) => {
-                let msg = String::from_utf8_lossy(&buffer[..n]);
-                println!("收到消息: {}", msg);
+pub async fn start_km_udp_server() {
+    let mut socket = TcpClient::connect("0.0.0.0:12345".to_string())
+        .await
+        .expect("连接失败");
+
+    let mut buf = [0u8; 1024];
+    let setting = Settings::default();
+    let mut enigo = Enigo::new(&setting).unwrap();
+    let (width, height) = current_resolution().unwrap();
+
+    loop {
+        match socket.receive(&mut buf).await {
+            Ok(size) => {
+                if size == 0 {
+                    println!("连接关闭");
+                    break;
+                }
+
+                let msg = String::from_utf8_lossy(&buf[..size]);
+                let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg);
+
+                match evt_data {
+                    Ok(evt) => {
+                        let data = evt.evt_data;
+                        match evt.evt_type {
+                            KMEventType::InitMouseMove => {
+                                let y = (&data.y_ratio * height as f32).round() as i32;
+                                println!("收到消息: Y: {:?}", y);
+                                enigo.move_mouse(width, y, Coordinate::Abs);
+                            }
+                            KMEventType::MouseMove => {
+                                enigo.move_mouse(data.x, data.y, Coordinate::Rel);
+                                handle_slave_mouse(&mut socket).await;
+                                println!(
+                                    "收到消息: type: {:?}, data: {:?}",
+                                    evt.evt_type, data
+                                );
+                            }
+                            _ => {
+                                println!("其他类型事件");
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        println!("解析错误: {:?}", err);
+                    }
+                }
             }
             Err(e) => {
-                eprintln!("接收错误: {:?}", e);
+                eprintln!("接收失败: {:?}", e);
+                break;
             }
-        };
-        // let mut buf = [0u8; 1024];
-        // let setting = Settings::default();
-        // let mut enigo = Enigo::new(&setting).unwrap();
-        // let (width, height) = current_resolution().unwrap();
-        // loop {
-        //     match socket.recv_from(&mut buf) {
-        //         Ok((size, src)) => {
-        //             let msg = String::from_utf8_lossy(&buf[..size]);
-        //             let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg);
-        //             match evt_data {
-        //                 Ok(evt) => {
-        //                     let data = evt.evt_data;
-        //                     match evt.evt_type {
-        //                         KMEventType::InitMouseMove => {
-        //                             let y = (&data.y_ratio * height as f32).round() as i32;
-        //                             println!("收到消息: Y: {:?}", y);
-        //                             enigo.move_mouse(width, y, Coordinate::Abs);
-        //                         }
-        //                         KMEventType::MouseMove => {
-        //                             enigo.move_mouse(data.x, data.y, Coordinate::Rel);
-        //                             handle_slave_mouse(&socket);
-        //                             println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, data);
-        //                         }
-        //                         _ => {
-        //                             println!("receive event")
-        //                         }
-        //                     }
-        //                 }
-        //                 Err(err) => {
-        //                     println!("Parse Error, {:?}", err)
-        //                 }
-        //             }
-        //         }
-        //         Err(e) => {
-        //             eprintln!("UDP 接收失败: {:?}", e);
-        //         }
-        //     }
-        // }
-    });
+        }
+    }
 }
 
-fn handle_slave_mouse(udp_socket: &UdpSocket) {
+async fn handle_slave_mouse(tcp_client: &mut TcpClient) {
     if let OtherMouse::Position { x, y } = OtherMouse::get_mouse_position() {
         let (width, height) = current_resolution().unwrap();
         if (x >= width - 3) {
@@ -264,7 +262,7 @@ fn handle_slave_mouse(udp_socket: &UdpSocket) {
                 },
             };
             println!("Border Detect");
-            udp_socket.send_to(&serde_json::to_string(&evt).unwrap().as_bytes(), "192.168.0.200:30004").unwrap();
+            tcp_client.send(serde_json::to_string(&evt).unwrap().as_bytes()).await.unwrap()
         }
     }
 }
