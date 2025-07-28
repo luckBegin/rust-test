@@ -161,11 +161,7 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
         },
     };
 
-    if (*MOUSE_POS.lock().unwrap() == 0) {
-        evt.evt_type = KMEventType::InitMouseMove;
-    }
     if let Ok(json) = serde_json::to_string(&evt) {
-        println!("send");
         if let Err(e) = socket.broadcast(json.as_bytes()).await {
             eprintln!("广播失败: {:?}", e);
         }
@@ -196,23 +192,16 @@ pub async fn start_km_udp_server() {
     let mut socket = TcpClient::connect("0.0.0.0:12345".to_string())
         .await
         .expect("连接失败");
-
     let mut buf = [0u8; 1024];
     let setting = Settings::default();
     let mut enigo = Enigo::new(&setting).unwrap();
     let (width, height) = current_resolution().unwrap();
-
+    socket.send("ok".as_bytes()).await;
     loop {
         match socket.receive(&mut buf).await {
-            Ok(size) => {
-                if size == 0 {
-                    println!("连接关闭");
-                    break;
-                }
-
+            Ok((size, src_addr)) => {
                 let msg = String::from_utf8_lossy(&buf[..size]);
                 let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg);
-
                 match evt_data {
                     Ok(evt) => {
                         let data = evt.evt_data;
@@ -223,8 +212,8 @@ pub async fn start_km_udp_server() {
                                 enigo.move_mouse(width, y, Coordinate::Abs);
                             }
                             KMEventType::MouseMove => {
-                                enigo.move_mouse(data.x, data.y, Coordinate::Rel);
-                                handle_slave_mouse(&mut socket).await;
+                                // enigo.move_mouse(data.x, data.y, Coordinate::Rel);
+                                // handle_slave_mouse(&mut socket).await;
                                 println!(
                                     "收到消息: type: {:?}, data: {:?}",
                                     evt.evt_type, data

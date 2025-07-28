@@ -1,10 +1,9 @@
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
+use tokio::net::UdpSocket;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-type SharedClients = Arc<Mutex<HashMap<String, Arc<Mutex<WriteHalf<TcpStream>>>>>>;
+type SharedClients = Arc<Mutex<HashMap<String, String>>>; // peer_id -> socket_addr (string)
 
 pub struct TcpServer {
     address: String,
@@ -20,76 +19,50 @@ impl TcpServer {
     }
 
     pub async fn run(&self) -> std::io::Result<()> {
-        let listener = TcpListener::bind(&self.address).await?;
-        println!("Server listening on {}", self.address);
+        let socket = Arc::new(UdpSocket::bind(&self.address).await?);
+        println!("UDP Server listening on {}", self.address);
 
-        loop {
-            let (stream, addr) = listener.accept().await?;
-            let peer = addr.to_string();
-            println!("New client connected: {}", peer);
+        let socket_clone = socket.clone();
+        let clients = self.clients.clone();
 
-            let (reader, writer) = tokio::io::split(stream);
-            let writer = Arc::new(Mutex::new(writer));
-
-            self.clients.lock().await.insert(peer.clone(), writer.clone());
-
-            let clients_clone = Arc::clone(&self.clients);
-            tokio::spawn(async move {
-                Self::handle_client(peer, reader, clients_clone).await;
-            });
-        }
-    }
-
-    async fn handle_client(peer: String, mut reader: ReadHalf<TcpStream>, clients: SharedClients) {
-        let mut buffer = [0u8; 1024];
-
-        loop {
-            match reader.read(&mut buffer).await {
-                Ok(0) => {
-                    println!("Client {} disconnected", peer);
-                    clients.lock().await.remove(&peer);
-                    break;
-                }
-                Ok(n) => {
-                    let msg = String::from_utf8_lossy(&buffer[..n]);
-                    println!("{} says: {}", peer, msg);
-                    // 如果想回复，可以调用 send_to 或 broadcast
-                    // 例如简单回显:
-                    // let _ = clients.lock().await.get(&peer).map(|writer| {
-                    //     let mut w = writer.lock().await;
-                    //     let _ = w.write_all(msg.as_bytes()).await;
-                    // });
-                }
-                Err(e) => {
-                    eprintln!("Error with client {}: {}", peer, e);
-                    clients.lock().await.remove(&peer);
-                    break;
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            loop {
+                match socket_clone.recv_from(&mut buf).await {
+                    Ok((size, addr)) => {
+                        let msg = String::from_utf8_lossy(&buf[..size]).to_string();
+                        let peer = addr.to_string();
+                        println!("{} says: {}", peer, msg);
+                        clients.lock().await.insert(peer.clone(), addr.to_string());
+                        let _ = socket_clone.send_to(msg.as_bytes(), &addr).await;
+                    }
+                    Err(e) => {
+                        eprintln!("recv_from error: {:?}", e);
+                        break;
+                    }
                 }
             }
-        }
+        });
+
+        Ok(())
     }
 
     pub async fn send_to(&self, peer: &str, msg: &str) -> std::io::Result<()> {
+        let socket = UdpSocket::bind("0.0.0.0:0").await?; // 临时 socket 发消息
         let clients = self.clients.lock().await;
-        if let Some(writer) = clients.get(peer) {
-            let mut writer = writer.lock().await;
-            writer.write_all(msg.as_bytes()).await?;
+        if let Some(addr) = clients.get(peer) {
+            socket.send_to(msg.as_bytes(), addr).await?;
         }
         Ok(())
     }
 
     pub async fn broadcast(&self, msg: &[u8]) -> std::io::Result<()> {
+        let socket = UdpSocket::bind("0.0.0.0:0").await?;
         let clients = self.clients.lock().await;
-        println!("Broadcasting to {} clients", clients.len());
-
-        for (peer, writer) in clients.iter() {
-            let mut writer = writer.lock().await;
-            if let Err(e) = writer.write_all(msg).await {
-                eprintln!("Failed to send to {}: {:?}", peer, e);
-            } else {
-                println!("Sent to {}", peer);
-            }
+        for (_peer, addr) in clients.iter() {
+            let _ = socket.send_to(msg, addr).await;
         }
+
         Ok(())
     }
 }

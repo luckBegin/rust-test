@@ -1,23 +1,29 @@
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::UdpSocket;
+use std::net::SocketAddr;
 
 pub struct TcpClient {
-    address: String,
-    stream: TcpStream,
+    server_addr: SocketAddr, // 服务端地址
+    socket: UdpSocket,       // 本地socket
 }
 
 impl TcpClient {
-    pub async fn connect(address: String) -> std::io::Result<Self> {
-        let stream = TcpStream::connect(address.clone()).await?;
-        Ok(Self { address, stream })
+    // 创建客户端，绑定本地随机端口，指定服务端地址
+    pub async fn connect(server_addr_str: String) -> std::io::Result<Self> {
+        let server_addr: SocketAddr = server_addr_str.parse().expect("Invalid server address");
+        // 绑定本地随机端口 (0.0.0.0:0)
+        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        Ok(Self { server_addr, socket })
     }
 
-    pub async fn send (&mut self, data: &[u8]) -> std::io::Result<()> {
-        self.stream.write_all(data).await?;
+    // 发送数据给服务器
+    pub async fn send(&self, data: &[u8]) -> std::io::Result<()> {
+        self.socket.send_to(data, &self.server_addr).await?;
         Ok(())
     }
 
-    pub async fn receive(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        self.stream.read(buffer).await
+    // 接收数据到 buffer，返回接收的字节数和发送者地址
+    pub async fn receive(&self, buffer: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+        let (size, src_addr) = self.socket.recv_from(buffer).await?;
+        Ok((size, src_addr))
     }
 }
