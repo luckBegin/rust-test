@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 type SharedClients = Arc<Mutex<HashMap<String, String>>>; // peer_id -> socket_addr (string)
+type OnMessage = Arc<dyn Fn(String, String) + Send + Sync>;
 
 pub struct TcpServer {
     address: String,
@@ -18,12 +19,12 @@ impl TcpServer {
         }
     }
 
-    pub async fn run(&self) -> std::io::Result<()> {
+    pub async fn run_with_callback(&self, on_message: OnMessage) -> std::io::Result<()> {
         let socket = Arc::new(UdpSocket::bind(&self.address).await?);
         println!("UDP Server listening on {}", self.address);
-
         let socket_clone = socket.clone();
         let clients = self.clients.clone();
+        let on_message_cb = on_message.clone();
 
         tokio::spawn(async move {
             let mut buf = [0u8; 1024];
@@ -32,9 +33,8 @@ impl TcpServer {
                     Ok((size, addr)) => {
                         let msg = String::from_utf8_lossy(&buf[..size]).to_string();
                         let peer = addr.to_string();
-                        println!("{} says: {}", peer, msg);
                         clients.lock().await.insert(peer.clone(), addr.to_string());
-                        let _ = socket_clone.send_to(msg.as_bytes(), &addr).await;
+                        (on_message_cb)(peer, msg);
                     }
                     Err(e) => {
                         eprintln!("recv_from error: {:?}", e);

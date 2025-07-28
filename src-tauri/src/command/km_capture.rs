@@ -43,6 +43,7 @@ pub enum KMEventType {
     MouseClickLeft,
     MouseClickRight,
     MouseBack,
+    Ready,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,12 +68,32 @@ pub struct MouseData {
 pub async fn start_km_capture() {
     let (evt_sender, evt_receiver) = channel::<(i32, i32, f64, f64)>();
     let tcp_server = Arc::new(TcpServer::new("0.0.0.0:12345"));
+
+    let callback = Arc::new(|peer: String, msg: String| {
+        let km_event: KmEvent<MouseData> = serde_json::from_str(&msg).expect("错误的信息");
+        let evt_data = km_event.evt_data;
+        println!("event data {:?}", evt_data);
+        let (width, height) = current_resolution().unwrap();
+        match km_event.evt_type {
+            KMEventType::MouseBack => {
+                let y = (&evt_data.y_ratio * height as f32).round() as i32;
+                println!("收到消息: Y: {:?}", y);
+                // enigo.move_mouse(width, y, Coordinate::Abs);
+            }
+            _ => (),
+        }
+        *CURSOR_HIDE.lock().unwrap() = false;
+        show_cursor();
+    });
+
+
     tokio::spawn({
         let tcp_server = Arc::clone(&tcp_server);
         async move {
-            tcp_server.run().await;
+            tcp_server.run_with_callback(callback).await;
         }
     });
+
     tokio::spawn({
         let tcp_server = Arc::clone(&tcp_server);
         async move {
@@ -115,21 +136,19 @@ pub async fn start_km_capture() {
     });
 
     let handle = tokio::spawn(async move {
-        println!("1a");
         for (dx, dy, cx, cy) in evt_receiver {
             mouse_move_handle(dx, dy, cx, cy, &tcp_server).await;
         }
     });
 }
 
-pub static MOUSE_POS: Lazy<Mutex<i32>> = Lazy::new(|| Mutex::new(0));
 pub static CURSOR_HIDE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 fn should_send_evt(cx: f64, cy: f64) -> bool {
     let mut should_send_evt: bool = false;
     let (width, height) = get_monitor_size();
     let delta = 3f64;
-    if (*MOUSE_POS.lock().unwrap() == 0) {
+    if (!*CURSOR_HIDE.lock().unwrap()) {
         if (cx < delta) {
             hide_cursor();
             *CURSOR_HIDE.lock().unwrap() = true;
@@ -189,14 +208,20 @@ pub async fn start_km_capture() {
 
 #[tauri::command]
 pub async fn start_km_udp_server() {
-    let mut socket = TcpClient::connect("0.0.0.0:12345".to_string())
+    let mut socket = TcpClient::connect("192.168.0.200:12345".to_string())
         .await
         .expect("连接失败");
     let mut buf = [0u8; 1024];
     let setting = Settings::default();
     let mut enigo = Enigo::new(&setting).unwrap();
     let (width, height) = current_resolution().unwrap();
-    socket.send("ok".as_bytes()).await;
+
+    let km = KmEvent {
+        evt_type: KMEventType::Ready,
+        evt_data: "",
+    };
+    let km_str = serde_json::to_string(&km).unwrap();
+    socket.send(km_str.as_bytes()).await;
     loop {
         match socket.receive(&mut buf).await {
             Ok((size, src_addr)) => {
@@ -212,8 +237,8 @@ pub async fn start_km_udp_server() {
                                 enigo.move_mouse(width, y, Coordinate::Abs);
                             }
                             KMEventType::MouseMove => {
-                                // enigo.move_mouse(data.x, data.y, Coordinate::Rel);
-                                // handle_slave_mouse(&mut socket).await;
+                                enigo.move_mouse(data.x, data.y, Coordinate::Rel);
+                                handle_slave_mouse(&mut socket).await;
                                 println!(
                                     "收到消息: type: {:?}, data: {:?}",
                                     evt.evt_type, data
