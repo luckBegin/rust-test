@@ -70,6 +70,7 @@ pub struct MouseData {
     y: i32,
     x_ratio: f32,
     y_ratio: f32,
+    value: String
 }
 
 impl Default for MouseData {
@@ -79,6 +80,7 @@ impl Default for MouseData {
             y: 0,
             x_ratio: 0.0,
             y_ratio: 0.0,
+            value: "".to_string()
         }
     }
 }
@@ -86,7 +88,7 @@ impl Default for MouseData {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn start_km_capture() {
-    let (evt_sender, evt_receiver) = channel::<(i32, i32, f64, f64, KmEvent<String>)>();
+    let (evt_sender, evt_receiver) = channel::<(i32, i32, f64, f64, KmEvent<MouseData>)>();
     let tcp_server = Arc::new(TcpServer::new("0.0.0.0:12345"));
     let callback = Arc::new(|peer: String, msg: String| {
         let setting = Settings::default();
@@ -198,6 +200,7 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
             y: dy as i32,
             x_ratio: cx as f32 / width as f32,
             y_ratio: cy as f32 / height as f32,
+            value: "".to_string()
         },
     };
     if (*IS_FIRST.lock().unwrap()) {
@@ -212,29 +215,32 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
     };
 }
 
-async fn mouse_action_handle(km_evt: &KmEvent<String>, socket: &TcpServer) {
+async fn mouse_action_handle(km_evt: &KmEvent<MouseData>, socket: &TcpServer) {
     if let Ok(json) = serde_json::to_string(km_evt) {
         socket.broadcast(json.as_bytes()).await.unwrap()
     }
 }
 
 #[cfg(target_os = "macos")]
-fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEvent<String>)>) -> CallbackResult {
+fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEvent<MouseData>)>) -> CallbackResult {
     println!("type {:?}", _type);
     if !*CURSOR_HIDE.lock().unwrap() {
         return CallbackResult::Keep;
     };
 
-    let evt_data = match _type {
+    let mouse_data = match _type {
         CGEventType::LeftMouseDown => "LeftMouseDown",
         CGEventType::LeftMouseUp => "LeftMouseUp",
         CGEventType::RightMouseUp => "RightMoseUp",
         CGEventType::RightMouseDown => "RightMouseDown",
         _ => "",
     };
+
+    let mut evt_data = MouseData::default() ;
+    evt_data.value = mouse_data.to_string();
     let km_evt = KmEvent {
         evt_type: KMEventType::MouseEvent,
-        evt_data: evt_data.to_string(),
+        evt_data
     };
     sender.send((0, 0, 0f64, 0f64, km_evt)).unwrap();
     CallbackResult::Keep
@@ -315,6 +321,7 @@ async fn handle_slave_mouse(tcp_client: &mut TcpClient) {
                     y,
                     x_ratio: x as f32 / width as f32,
                     y_ratio: y as f32 / height as f32,
+                    value: "".to_string()
                 },
             };
             tcp_client.send(serde_json::to_string(&evt).unwrap().as_bytes()).await.unwrap()
