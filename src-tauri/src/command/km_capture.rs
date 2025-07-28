@@ -293,7 +293,7 @@ pub async fn start_km_udp_server() {
                                 let mut button: Button;
                                 let mut action: Direction;
 
-                                match data.value {
+                                match data.value.as_str() {
                                     "LeftMouseDown" => {
                                         button = Button::Left;
                                         action = Direction::Press
@@ -301,6 +301,10 @@ pub async fn start_km_udp_server() {
                                     "LeftMouseUp" => {
                                         button = Button::Left;
                                         action = Direction::Release;
+                                    }
+                                    _ => {
+                                        button = Button::Left;
+                                        action = Direction::Click;
                                     }
                                 };
                                 enigo.button(button, action);
