@@ -34,6 +34,7 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::service::tcp::tcp_server::TcpServer;
 use crate::service::tcp::tcp_client::TcpClient;
 use std::sync::mpsc::{Sender, channel};
+use tokio_tungstenite::tungstenite::accept;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KMEventType {
@@ -70,7 +71,7 @@ pub struct MouseData {
     y: i32,
     x_ratio: f32,
     y_ratio: f32,
-    value: String
+    value: String,
 }
 
 impl Default for MouseData {
@@ -80,7 +81,7 @@ impl Default for MouseData {
             y: 0,
             x_ratio: 0.0,
             y_ratio: 0.0,
-            value: "".to_string()
+            value: "".to_string(),
         }
     }
 }
@@ -200,7 +201,7 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
             y: dy as i32,
             x_ratio: cx as f32 / width as f32,
             y_ratio: cy as f32 / height as f32,
-            value: "".to_string()
+            value: "".to_string(),
         },
     };
     if (*IS_FIRST.lock().unwrap()) {
@@ -223,7 +224,6 @@ async fn mouse_action_handle(km_evt: &KmEvent<MouseData>, socket: &TcpServer) {
 
 #[cfg(target_os = "macos")]
 fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEvent<MouseData>)>) -> CallbackResult {
-    println!("type {:?}", _type);
     if !*CURSOR_HIDE.lock().unwrap() {
         return CallbackResult::Keep;
     };
@@ -236,11 +236,11 @@ fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEven
         _ => "",
     };
 
-    let mut evt_data = MouseData::default() ;
+    let mut evt_data = MouseData::default();
     evt_data.value = mouse_data.to_string();
     let km_evt = KmEvent {
         evt_type: KMEventType::MouseEvent,
-        evt_data
+        evt_data,
     };
     sender.send((0, 0, 0f64, 0f64, km_evt)).unwrap();
     CallbackResult::Keep
@@ -290,7 +290,21 @@ pub async fn start_km_udp_server() {
                                 handle_slave_mouse(&mut socket).await;
                             }
                             KMEventType::MouseEvent => {
-                                println!("data type {:?}", data )
+                                let mut button: Button;
+                                let mut action: Direction;
+
+                                match data.value {
+                                    "LeftMouseDown" => {
+                                        button = Button::Left;
+                                        action = Direction::Press
+                                    }
+                                    "LeftMouseUp" => {
+                                        button = Button::Left;
+                                        action = Direction::Release;
+                                    }
+                                };
+                                enigo.button(button, action);
+                                println!("data type {:?}", data)
                             }
                             _ => {
                                 println!("其他类型事件");
@@ -321,7 +335,7 @@ async fn handle_slave_mouse(tcp_client: &mut TcpClient) {
                     y,
                     x_ratio: x as f32 / width as f32,
                     y_ratio: y as f32 / height as f32,
-                    value: "".to_string()
+                    value: "".to_string(),
                 },
             };
             tcp_client.send(serde_json::to_string(&evt).unwrap().as_bytes()).await.unwrap()
@@ -338,6 +352,7 @@ pub fn get_monitor_size() -> (i32, i32) {
 fn hide_cursor() {
     unsafe {
         let main_display = CGDisplay { id: CGMainDisplayID() };
+        println!("hide mouse");
         main_display.hide_cursor().unwrap();
     }
 }
