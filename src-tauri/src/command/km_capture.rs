@@ -26,10 +26,14 @@ use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
 use core_graphics::display::CGPoint;
 #[cfg(target_os = "macos")]
 use objc::runtime::protocol_conformsToProtocol;
+use rdev::Key::Print;
 use resolution::current_resolution;
+use tauri::async_runtime::handle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use crate::service::tcp::tcp_server::TcpServer;
+use crate::service::tcp::tcp_client::TcpClient;
+use std::sync::mpsc::{Sender, channel};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KMEventType {
@@ -38,7 +42,7 @@ pub enum KMEventType {
     Keyboard,
     MouseClickLeft,
     MouseClickRight,
-    MouseBack
+    MouseBack,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,45 +65,60 @@ pub struct MouseData {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn start_km_capture() {
-    let socket = Arc::new(Mutex::new(UdpSocket::bind(KM_ADDR_UDP).unwrap()));
-    socket.lock().unwrap().set_nonblocking(true).unwrap();
-    let socket_1 = Arc::clone(&socket);
-    std::thread::spawn(move || {
-        CGEventTap::with_enabled(
-            CGEventTapLocation::HID,
-            CGEventTapPlacement::HeadInsertEventTap,
-            CGEventTapOptions::Default,
-            vec![
-                CGEventType::MouseMoved,
-                CGEventType::LeftMouseDown,
-                CGEventType::LeftMouseUp,
-                CGEventType::RightMouseDown,
-                CGEventType::RightMouseUp,
-                CGEventType::ScrollWheel,
-            ],
-            move |_proxy, _type, event| {
-                match _type {
-                    CGEventType::MouseMoved => {
-                        let dx = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_X);
-                        let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
-                        let CGPoint { x: cx, y: cy } = event.location();
-                        if (should_send_evt(cx, cy)) {
-                            return mouse_move_handle(dx as i32, dy as i32, cx, cy, &socket_1.lock().unwrap());
-                        };
-                        CallbackResult::Keep
+    let (evt_sender, evt_receiver) = channel::<(i32, i32, f64, f64)>();
+    let tcp_server = Arc::new(TcpServer::new("0.0.0.0:12345"));
+    tokio::spawn({
+        let tcp_server = Arc::clone(&tcp_server);
+        async move {
+            tcp_server.run().await;
+        }
+    });
+    tokio::spawn({
+        let tcp_server = Arc::clone(&tcp_server);
+        async move {
+            CGEventTap::with_enabled(
+                CGEventTapLocation::HID,
+                CGEventTapPlacement::HeadInsertEventTap,
+                CGEventTapOptions::Default,
+                vec![
+                    CGEventType::MouseMoved,
+                    CGEventType::LeftMouseDown,
+                    CGEventType::LeftMouseUp,
+                    CGEventType::RightMouseDown,
+                    CGEventType::RightMouseUp,
+                    CGEventType::ScrollWheel,
+                ],
+                move |_proxy, _type, event| {
+                    match _type {
+                        CGEventType::MouseMoved => {
+                            let dx = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_X);
+                            let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
+                            let CGPoint { x: cx, y: cy } = event.location();
+                            if should_send_evt(cx, cy) {
+                                evt_sender.send((dx as i32, dy as i32, cx, cy));
+                            }
+                            CallbackResult::Keep
+                        }
+                        CGEventType::ScrollWheel
+                        | CGEventType::LeftMouseDown
+                        | CGEventType::LeftMouseUp
+                        | CGEventType::RightMouseDown
+                        | CGEventType::RightMouseUp => mouse_action(),
+                        _ => CallbackResult::Keep,
                     }
-                    CGEventType::ScrollWheel
-                    | CGEventType::LeftMouseDown
-                    | CGEventType::LeftMouseUp
-                    | CGEventType::RightMouseDown
-                    | CGEventType::RightMouseUp => mouse_action(),
-                    _ => CallbackResult::Keep,
-                }
-            },
-            || {
-                CFRunLoop::run_current()
-            },
-        ).expect("Failed to install event tap");
+                },
+                || {
+                    CFRunLoop::run_current()
+                },
+            ).expect("Failed to install event tap");
+        }
+    });
+
+    let handle = tokio::spawn(async move {
+        println!("1a");
+        for (dx, dy, cx, cy) in evt_receiver {
+            mouse_move_handle(dx, dy, cx, cy, &tcp_server).await;
+        }
     });
 }
 
@@ -130,7 +149,7 @@ fn should_send_evt(cx: f64, cy: f64) -> bool {
 
 
 #[cfg(target_os = "macos")]
-fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> CallbackResult {
+async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServer) -> CallbackResult {
     let (width, height) = get_monitor_size();
     let mut evt = KmEvent {
         evt_type: KMEventType::MouseMove,
@@ -146,14 +165,9 @@ fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) -> 
         evt.evt_type = KMEventType::InitMouseMove;
     }
     if let Ok(json) = serde_json::to_string(&evt) {
-        match socket.send_to(json.as_bytes(), "192.168.0.28:30004") {
-            Ok(_) => {
-                *MOUSE_POS.lock().unwrap() += dx;
-                // println!("x: {:?}, y: {:?}, diff {:?}", dx, dy, *MOUSE_POS.lock().unwrap());
-            }
-            Err(e) => {
-                println!("Send Error: {:?}", e);
-            }
+        println!("send");
+        if let Err(e) = socket.broadcast(json.as_bytes()).await {
+            eprintln!("广播失败: {:?}", e);
         }
     };
     CallbackResult::Drop
@@ -179,62 +193,77 @@ pub async fn start_km_capture() {
 
 #[tauri::command]
 pub fn start_km_udp_server() {
-    std::thread::spawn(|| {
-        let socket = UdpSocket::bind(KM_ADDR_UDP).expect("无法绑定 UDP 端口");
-        let mut buf = [0u8; 1024];
-        let setting = Settings::default();
-        let mut enigo = Enigo::new(&setting).unwrap();
-        let (width, height) = current_resolution().unwrap();
-        loop {
-            match socket.recv_from(&mut buf) {
-                Ok((size, src)) => {
-                    let msg = String::from_utf8_lossy(&buf[..size]);
-                    let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg);
-                    match evt_data {
-                        Ok(evt) => {
-                            let data = evt.evt_data;
-                            match evt.evt_type {
-                                KMEventType::InitMouseMove => {
-                                    let y = (&data.y_ratio * height as f32).round() as i32;
-                                    println!("收到消息: Y: {:?}", y);
-                                    enigo.move_mouse(width, y, Coordinate::Abs);
-                                }
-                                KMEventType::MouseMove => {
-                                    enigo.move_mouse(data.x, data.y, Coordinate::Rel);
-                                    handle_slave_mouse(&socket);
-                                    println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, data);
-                                }
-                                _ => {
-                                    println!("receive event")
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            println!("Parse Error, {:?}", err)
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("UDP 接收失败: {:?}", e);
-                }
+    tokio::spawn(async move {
+        // let socket = UdpSocket::bind(KM_ADDR_UDP).expect("无法绑定 UDP 端口");
+        let mut socket = TcpClient::connect("0.0.0.0:12345".to_string()).await.unwrap();
+        let mut buffer = vec![0u8; 1024];
+        match socket.receive(&mut buffer).await {
+            Ok(n) if n == 0 => {
+                println!("服务器关闭连接");
             }
-        }
+            Ok(n) => {
+                let msg = String::from_utf8_lossy(&buffer[..n]);
+                println!("收到消息: {}", msg);
+            }
+            Err(e) => {
+                eprintln!("接收错误: {:?}", e);
+            }
+        };
+        // let mut buf = [0u8; 1024];
+        // let setting = Settings::default();
+        // let mut enigo = Enigo::new(&setting).unwrap();
+        // let (width, height) = current_resolution().unwrap();
+        // loop {
+        //     match socket.recv_from(&mut buf) {
+        //         Ok((size, src)) => {
+        //             let msg = String::from_utf8_lossy(&buf[..size]);
+        //             let evt_data: Result<KmEvent<MouseData>, _> = serde_json::from_str(&msg);
+        //             match evt_data {
+        //                 Ok(evt) => {
+        //                     let data = evt.evt_data;
+        //                     match evt.evt_type {
+        //                         KMEventType::InitMouseMove => {
+        //                             let y = (&data.y_ratio * height as f32).round() as i32;
+        //                             println!("收到消息: Y: {:?}", y);
+        //                             enigo.move_mouse(width, y, Coordinate::Abs);
+        //                         }
+        //                         KMEventType::MouseMove => {
+        //                             enigo.move_mouse(data.x, data.y, Coordinate::Rel);
+        //                             handle_slave_mouse(&socket);
+        //                             println!("收到来自 {} 的消息: type: {:?}, data: {:?}", src, evt.evt_type, data);
+        //                         }
+        //                         _ => {
+        //                             println!("receive event")
+        //                         }
+        //                     }
+        //                 }
+        //                 Err(err) => {
+        //                     println!("Parse Error, {:?}", err)
+        //                 }
+        //             }
+        //         }
+        //         Err(e) => {
+        //             eprintln!("UDP 接收失败: {:?}", e);
+        //         }
+        //     }
+        // }
     });
 }
 
-fn handle_slave_mouse (udp_socket: &UdpSocket) {
-    if let OtherMouse::Position {x,y} = OtherMouse::get_mouse_position() {
+fn handle_slave_mouse(udp_socket: &UdpSocket) {
+    if let OtherMouse::Position { x, y } = OtherMouse::get_mouse_position() {
         let (width, height) = current_resolution().unwrap();
-        if( x >= width - 3 ) {
+        if (x >= width - 3) {
             let mut evt = KmEvent {
                 evt_type: KMEventType::MouseBack,
                 evt_data: MouseData {
-                    x, y,
-                    x_ratio: x as f32  / width as f32,
+                    x,
+                    y,
+                    x_ratio: x as f32 / width as f32,
                     y_ratio: y as f32 / height as f32,
                 },
             };
-            println!("Border Detect") ;
+            println!("Border Detect");
             udp_socket.send_to(&serde_json::to_string(&evt).unwrap().as_bytes(), "192.168.0.200:30004").unwrap();
         }
     }
@@ -250,7 +279,6 @@ fn hide_cursor() {
     unsafe {
         let main_display = CGDisplay { id: CGMainDisplayID() };
         main_display.hide_cursor().unwrap();
-        println!("hide mouse")
     }
 }
 

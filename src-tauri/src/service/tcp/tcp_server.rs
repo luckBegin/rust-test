@@ -1,10 +1,10 @@
 use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-type SharedClients = Arc<Mutex<HashMap<String, Arc<Mutex<TcpStream>>>>>;
+type SharedClients = Arc<Mutex<HashMap<String, Arc<Mutex<WriteHalf<TcpStream>>>>>>;
 
 pub struct TcpServer {
     address: String,
@@ -28,49 +28,67 @@ impl TcpServer {
             let peer = addr.to_string();
             println!("New client connected: {}", peer);
 
-            let stream = Arc::new(Mutex::new(stream));
-            let clients = Arc::clone(&self.clients);
-            clients.lock().await.insert(peer.clone(), stream.clone());
+            let (reader, writer) = tokio::io::split(stream);
+            let writer = Arc::new(Mutex::new(writer));
 
-            tokio::spawn(Self::handle_client(peer, stream, clients));
+            self.clients.lock().await.insert(peer.clone(), writer.clone());
+
+            let clients_clone = Arc::clone(&self.clients);
+            tokio::spawn(async move {
+                Self::handle_client(peer, reader, clients_clone).await;
+            });
         }
     }
 
-    async fn handle_client(peer: String, stream: Arc<Mutex<TcpStream>>, clients: SharedClients) {
+    async fn handle_client(peer: String, mut reader: ReadHalf<TcpStream>, clients: SharedClients) {
         let mut buffer = [0u8; 1024];
 
         loop {
-            let n = {
-                let mut locked_stream = stream.lock().await;
-                match locked_stream.read(&mut buffer).await {
-                    Ok(0) => {
-                        println!("Client {} disconnected", peer);
-                        clients.lock().await.remove(&peer);
-                        break;
-                    }
-                    Ok(n) => n,
-                    Err(e) => {
-                        eprintln!("Error with client {}: {}", peer, e);
-                        clients.lock().await.remove(&peer);
-                        break;
-                    }
+            match reader.read(&mut buffer).await {
+                Ok(0) => {
+                    println!("Client {} disconnected", peer);
+                    clients.lock().await.remove(&peer);
+                    break;
                 }
-            };
-
-            let msg = String::from_utf8_lossy(&buffer[..n]);
-            println!("{} says: {}", peer, msg);
-
-            let response = format!("Server received: {}\n", msg);
-            let mut locked_stream = stream.lock().await;
-            let _ = locked_stream.write_all(response.as_bytes()).await;
+                Ok(n) => {
+                    let msg = String::from_utf8_lossy(&buffer[..n]);
+                    println!("{} says: {}", peer, msg);
+                    // 如果想回复，可以调用 send_to 或 broadcast
+                    // 例如简单回显:
+                    // let _ = clients.lock().await.get(&peer).map(|writer| {
+                    //     let mut w = writer.lock().await;
+                    //     let _ = w.write_all(msg.as_bytes()).await;
+                    // });
+                }
+                Err(e) => {
+                    eprintln!("Error with client {}: {}", peer, e);
+                    clients.lock().await.remove(&peer);
+                    break;
+                }
+            }
         }
     }
 
     pub async fn send_to(&self, peer: &str, msg: &str) -> std::io::Result<()> {
         let clients = self.clients.lock().await;
-        if let Some(client) = clients.get(peer) {
-            let mut stream = client.lock().await;
-            stream.write_all(msg.as_bytes()).await?;
+        if let Some(writer) = clients.get(peer) {
+            let mut writer = writer.lock().await;
+            writer.write_all(msg.as_bytes()).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn broadcast(&self, msg: &[u8]) -> std::io::Result<()> {
+        let clients = self.clients.lock().await;
+        println!("Broadcasting to {} clients", clients.len());
+
+        for (peer, writer) in clients.iter() {
+            let mut writer = writer.lock().await;
+            if let Err(e) = writer.write_all(msg).await {
+                eprintln!("Failed to send to {}: {:?}", peer, e);
+            } else {
+                println!("Sent to {}", peer);
+            }
         }
         Ok(())
     }
