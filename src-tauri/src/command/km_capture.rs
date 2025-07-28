@@ -79,8 +79,9 @@ impl Default for MouseData {
 pub async fn start_km_capture() {
     let (evt_sender, evt_receiver) = channel::<(i32, i32, f64, f64)>();
     let tcp_server = Arc::new(TcpServer::new("0.0.0.0:12345"));
-
     let callback = Arc::new(|peer: String, msg: String| {
+        let setting = Settings::default();
+        let mut enigo = Enigo::new(&setting).unwrap();
         let km_event: KmEvent<MouseData> = serde_json::from_str(&msg).expect("错误的信息");
         let evt_data = km_event.evt_data;
         println!("event data {:?}", evt_data);
@@ -88,13 +89,13 @@ pub async fn start_km_capture() {
         match km_event.evt_type {
             KMEventType::MouseBack => {
                 let y = (&evt_data.y_ratio * height as f32).round() as i32;
-                println!("收到消息: Y: {:?}", y);
-                // enigo.move_mouse(width, y, Coordinate::Abs);
+                enigo.move_mouse(5, y, Coordinate::Abs);
+                *CURSOR_HIDE.lock().unwrap() = false;
+                *IS_FIRST.lock().unwrap() = true;
+                show_cursor();
             }
             _ => (),
         }
-        *CURSOR_HIDE.lock().unwrap() = false;
-        show_cursor();
     });
 
 
@@ -154,7 +155,7 @@ pub async fn start_km_capture() {
 }
 
 pub static CURSOR_HIDE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
-
+pub static IS_FIRST: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(true));
 fn should_send_evt(cx: f64, cy: f64) -> bool {
     let mut should_send_evt: bool = false;
     let (width, height) = get_monitor_size();
@@ -167,7 +168,7 @@ fn should_send_evt(cx: f64, cy: f64) -> bool {
         } else {
             if (*CURSOR_HIDE.lock().unwrap()) {
                 show_cursor();
-                *CURSOR_HIDE.lock().unwrap() = false;
+                *CURSOR_HIDE.lock().unwrap() = true;
             }
         }
     } else {
@@ -190,6 +191,10 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
             y_ratio: cy as f32 / height as f32,
         },
     };
+    if (*IS_FIRST.lock().unwrap()) {
+        evt.evt_type = KMEventType::InitMouseMove;
+        *IS_FIRST.lock().unwrap() = false;
+    }
 
     if let Ok(json) = serde_json::to_string(&evt) {
         if let Err(e) = socket.broadcast(json.as_bytes()).await {
@@ -245,7 +250,7 @@ pub async fn start_km_udp_server() {
                             KMEventType::InitMouseMove => {
                                 let y = (&data.y_ratio * height as f32).round() as i32;
                                 println!("收到消息: Y: {:?}", y);
-                                enigo.move_mouse(width, y, Coordinate::Abs);
+                                enigo.move_mouse(width - 5, y, Coordinate::Abs);
                             }
                             KMEventType::MouseMove => {
                                 enigo.move_mouse(data.x, data.y, Coordinate::Rel);
@@ -286,7 +291,6 @@ async fn handle_slave_mouse(tcp_client: &mut TcpClient) {
                     y_ratio: y as f32 / height as f32,
                 },
             };
-            println!("Border Detect");
             tcp_client.send(serde_json::to_string(&evt).unwrap().as_bytes()).await.unwrap()
         }
     }
