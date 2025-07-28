@@ -40,10 +40,10 @@ pub enum KMEventType {
     MouseMove,
     InitMouseMove,
     Keyboard,
-    MouseClickLeft,
-    MouseClickRight,
+    MouseEvent,
     MouseBack,
     Ready,
+    None,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,6 +53,15 @@ where
 {
     evt_type: KMEventType,
     evt_data: T,
+}
+
+impl<T: Default + Serialize> Default for KmEvent<T> {
+    fn default() -> Self {
+        Self {
+            evt_type: KMEventType::None,
+            evt_data: T::default(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -77,14 +86,13 @@ impl Default for MouseData {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn start_km_capture() {
-    let (evt_sender, evt_receiver) = channel::<(i32, i32, f64, f64)>();
+    let (evt_sender, evt_receiver) = channel::<(i32, i32, f64, f64, KmEvent<String>)>();
     let tcp_server = Arc::new(TcpServer::new("0.0.0.0:12345"));
     let callback = Arc::new(|peer: String, msg: String| {
         let setting = Settings::default();
         let mut enigo = Enigo::new(&setting).unwrap();
         let km_event: KmEvent<MouseData> = serde_json::from_str(&msg).expect("错误的信息");
         let evt_data = km_event.evt_data;
-        println!("event data {:?}", evt_data);
         let (width, height) = current_resolution().unwrap();
         match km_event.evt_type {
             KMEventType::MouseBack => {
@@ -128,7 +136,7 @@ pub async fn start_km_capture() {
                             let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
                             let CGPoint { x: cx, y: cy } = event.location();
                             if should_send_evt(cx, cy) {
-                                evt_sender.send((dx as i32, dy as i32, cx, cy));
+                                &evt_sender.send((dx as i32, dy as i32, cx, cy, KmEvent::default()));
                             }
                             CallbackResult::Keep
                         }
@@ -136,7 +144,7 @@ pub async fn start_km_capture() {
                         | CGEventType::LeftMouseDown
                         | CGEventType::LeftMouseUp
                         | CGEventType::RightMouseDown
-                        | CGEventType::RightMouseUp => mouse_action(),
+                        | CGEventType::RightMouseUp => mouse_action(&_type, &evt_sender),
                         _ => CallbackResult::Keep,
                     }
                 },
@@ -148,8 +156,11 @@ pub async fn start_km_capture() {
     });
 
     let handle = tokio::spawn(async move {
-        for (dx, dy, cx, cy) in evt_receiver {
-            mouse_move_handle(dx, dy, cx, cy, &tcp_server).await;
+        for (dx, dy, cx, cy, km_evt) in evt_receiver {
+            match km_evt.evt_type {
+                KMEventType::None => mouse_move_handle(dx, dy, cx, cy, &tcp_server).await,
+                _ => mouse_action_handle(&km_evt, &tcp_server).await
+            }
         }
     });
 }
@@ -178,9 +189,7 @@ fn should_send_evt(cx: f64, cy: f64) -> bool {
     should_send_evt
 }
 
-
-#[cfg(target_os = "macos")]
-async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServer) -> CallbackResult {
+async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServer) {
     let (width, height) = get_monitor_size();
     let mut evt = KmEvent {
         evt_type: KMEventType::MouseMove,
@@ -201,14 +210,33 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
             eprintln!("广播失败: {:?}", e);
         }
     };
-    CallbackResult::Drop
 }
 
-#[cfg(target_os = "windows")]
-fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &UdpSocket) {}
+async fn mouse_action_handle(km_evt: &KmEvent<String>, socket: &TcpServer) {
+    if let Ok(json) = serde_json::to_string(km_evt) {
+        socket.broadcast(json.as_bytes()).await.unwrap()
+    }
+}
 
 #[cfg(target_os = "macos")]
-fn mouse_action() -> CallbackResult {
+fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEvent<String>)>) -> CallbackResult {
+    println!("type {:?}", _type);
+    if !*CURSOR_HIDE.lock().unwrap() {
+        return CallbackResult::Keep;
+    };
+
+    let evt_data = match _type {
+        CGEventType::LeftMouseDown => "LeftMouseDown",
+        CGEventType::LeftMouseUp => "LeftMouseUp",
+        CGEventType::RightMouseUp => "RightMoseUp",
+        CGEventType::RightMouseDown => "RightMouseDown",
+        _ => "",
+    };
+    let km_evt = KmEvent {
+        evt_type: KMEventType::MouseEvent,
+        evt_data: evt_data.to_string(),
+    };
+    sender.send((0, 0, 0f64, 0f64, km_evt)).unwrap();
     CallbackResult::Keep
 }
 
@@ -248,17 +276,15 @@ pub async fn start_km_udp_server() {
                         let data = evt.evt_data;
                         match evt.evt_type {
                             KMEventType::InitMouseMove => {
-                                let y = (&data.y_ratio * height as f32).round() as i32;
-                                println!("收到消息: Y: {:?}", y);
+                                let y = (data.y_ratio * height as f32).round() as i32;
                                 enigo.move_mouse(width - 5, y, Coordinate::Abs);
                             }
                             KMEventType::MouseMove => {
                                 enigo.move_mouse(data.x, data.y, Coordinate::Rel);
                                 handle_slave_mouse(&mut socket).await;
-                                println!(
-                                    "收到消息: type: {:?}, data: {:?}",
-                                    evt.evt_type, data
-                                );
+                            }
+                            KMEventType::MouseEvent => {
+                                println!("data type {:?}", data )
                             }
                             _ => {
                                 println!("其他类型事件");
