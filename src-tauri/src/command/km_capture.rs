@@ -63,6 +63,17 @@ pub struct MouseData {
     y_ratio: f32,
 }
 
+impl Default for MouseData {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            x_ratio: 0.0,
+            y_ratio: 0.0,
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn start_km_capture() {
@@ -201,8 +212,8 @@ fn mouse_action() {}
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn start_km_capture() {
-    let socket = TcpServer::new("127.0.0.1:12345");
-    socket.run().await;
+    // let socket = TcpServer::new("127.0.0.1:12345");
+    // socket.run().await;
     println!("KM capture not supported on Windows.");
 }
 
@@ -218,7 +229,7 @@ pub async fn start_km_udp_server() {
 
     let km = KmEvent {
         evt_type: KMEventType::Ready,
-        evt_data: "",
+        evt_data: MouseData::default(),
     };
     let km_str = serde_json::to_string(&km).unwrap();
     socket.send(km_str.as_bytes()).await;
