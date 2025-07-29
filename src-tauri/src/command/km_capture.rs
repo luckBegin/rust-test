@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
-use rdev::{listen, Event, EventType, Key};
+// use rdev::{listen, Event, EventType, Key};
 use enigo::*;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
@@ -27,7 +27,6 @@ use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
 use core_graphics::display::CGPoint;
 #[cfg(target_os = "macos")]
 use objc::runtime::protocol_conformsToProtocol;
-use rdev::Key::Print;
 use resolution::current_resolution;
 use tauri::async_runtime::handle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -355,7 +354,16 @@ pub async fn start_km_udp_server() {
                             }
                             KMEventType::KeyUp
                             | KMEventType::KeyDown => {
-                                println!("evt: {:?}, {:?}", evt.evt_type, data);
+                                let dir = match evt.evt_type {
+                                    KMEventType::KeyUp => Some(Direction::Release),
+                                    KMEventType::KeyDown => Some(Direction::Press),
+                                    _ => None
+                                };
+                                if let Some(code) = data.key_code {
+                                    if dir.is_some() {
+                                        enigo.key(keycode_to_enigo_key(code), dir.unwrap());
+                                    }
+                                }
                             }
                             _ => {
                                 println!("其他类型事件");
@@ -404,7 +412,6 @@ pub fn get_monitor_size() -> (i32, i32) {
 fn hide_cursor() {
     unsafe {
         let main_display = CGDisplay { id: CGMainDisplayID() };
-        println!("hide mouse");
         main_display.hide_cursor().unwrap();
     }
 }
@@ -422,44 +429,40 @@ fn hide_cursor() {}
 
 #[cfg(target_os = "windows")]
 fn show_cursor() {}
-
-fn mac_keycode_to_enigo_key(keycode: i64) -> Key {
+fn keycode_to_enigo_key(keycode: i64) -> Key {
     match keycode {
-        0 => Key::KeyA,
-        1 => Key::KeyS,
-        2 => Key::KeyD,
-        3 => Key::KeyF,
-        4 => Key::KeyH,
-        5 => Key::KeyG,
-        6 => Key::KeyZ,
-        7 => Key::KeyX,
-        8 => Key::KeyC,
-        9 => Key::KeyV,
-        11 => Key::KeyB,
-        12 => Key::KeyQ,
-        13 => Key::KeyW,
-        14 => Key::KeyE,
-        15 => Key::KeyR,
-        16 => Key::KeyY,
-        17 => Key::KeyT,
-        31 => Key::KeyO,
-        32 => Key::KeyU,
-        34 => Key::KeyI,
-        35 => Key::KeyP,
-        37 => Key::KeyL,
-        38 => Key::KeyJ,
-        40 => Key::KeyK,
-        45 => Key::KeyN,
-        46 => Key::KeyM,
-        36 => Key::Return,
-        48 => Key::Tab,
-        49 => Key::Space,
-        51 => Key::Backspace,
-        53 => Key::Escape,
-        123 => Key::LeftArrow,
-        124 => Key::RightArrow,
-        125 => Key::DownArrow,
-        126 => Key::UpArrow,
-        _ => Key::Unknown(keycode as u32),
+        0x00 => Key::Unicode('a'), // macOS虚拟keycode 0对应a
+        0x0B => Key::Unicode('b'), // macOS虚拟keycode 11对应b
+        0x08 => Key::Unicode('c'),
+        0x02 => Key::Unicode('d'),
+        0x0E => Key::Unicode('e'),
+        0x03 => Key::Unicode('f'),
+        0x05 => Key::Unicode('g'),
+        0x04 => Key::Unicode('h'),
+        0x22 => Key::Unicode('i'),
+        0x26 => Key::Unicode('j'),
+        0x28 => Key::Unicode('k'),
+        0x25 => Key::Unicode('l'),
+        0x2E => Key::Unicode('m'),
+        0x2D => Key::Unicode('n'),
+        0x1F => Key::Unicode('o'),
+        0x23 => Key::Unicode('p'),
+        0x0C => Key::Unicode('q'),
+        0x0F => Key::Unicode('r'),
+        0x01 => Key::Unicode('s'),
+        0x11 => Key::Unicode('t'),
+        0x20 => Key::Unicode('u'),
+        0x09 => Key::Unicode('v'),
+        0x0D => Key::Unicode('w'),
+        0x07 => Key::Unicode('x'),
+        0x10 => Key::Unicode('y'),
+        0x06 => Key::Unicode('z'),
+
+        0x31 => Key::Space,
+        0x24 => Key::Return,
+        0x30 => Key::Tab,
+        0x33 => Key::Backspace,
+        0x35 => Key::Escape,
+        _ => Key::Other(keycode as u32),
     }
 }
