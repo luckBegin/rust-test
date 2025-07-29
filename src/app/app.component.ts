@@ -1,4 +1,4 @@
-import {Component, ElementRef, OnInit, TemplateRef, ViewChild} from '@angular/core';
+import {ChangeDetectorRef, Component, ElementRef, OnInit, TemplateRef, ViewChild} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {RouterOutlet} from '@angular/router';
 import {ShareModule} from "./share.module";
@@ -16,10 +16,11 @@ declare const JSMpeg: any;
 	imports: [CommonModule, RouterOutlet, ShareModule],
 })
 export class AppComponent implements OnInit {
+	constructor(
+		private change: ChangeDetectorRef
+	) {
+	}
 
-	// @ViewChild("canvas")
-	// public canvas: TemplateRef<HTMLCanvasElement>
-	// public path: string = '';
 	ngOnInit() {
 		this.jiance();
 		listen("notify", e => {
@@ -27,6 +28,7 @@ export class AppComponent implements OnInit {
 			if (e.payload && payload.evt_type === "Download") {
 				this.process = payload.evt_data;
 				if (payload.evt_data === 100) this.loadingShow = false
+				this.change.detectChanges();
 				this.jiance()
 			}
 		})

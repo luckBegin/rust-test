@@ -18,7 +18,7 @@ pub async fn transfer_file(file_path: String) {
         let mut file = File::open(&file_path).await.unwrap();
         let total_size = file.metadata().await.unwrap().len();
 
-        let mut stream = TcpStream::connect("192.178.0.200:30006").await.unwrap();
+        let mut stream = TcpStream::connect("192.168.0.28:30010").await.unwrap();
 
         stream.write_all(&file_name_len.to_be_bytes()).await.unwrap();
 
@@ -52,7 +52,7 @@ pub async fn receive_file() {
     use tokio::io::AsyncReadExt;
 
     tokio::spawn(async move {
-        let listener = TcpListener::bind("0.0.0.0:30006").await.unwrap();
+        let listener = TcpListener::bind("0.0.0.0:30010").await.unwrap();
         println!("TCP 监听中...");
 
         loop {
@@ -116,6 +116,7 @@ pub fn open_folder() {
         .spawn()
         .expect("打开文件夹失败");
 }
+
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn open_folder() {
