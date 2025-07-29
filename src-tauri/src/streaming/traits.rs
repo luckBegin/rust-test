@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-
 #[async_trait]
 pub trait StreamSend {
     async fn send(&self, data: Vec<u8>) -> anyhow::Result<()>;

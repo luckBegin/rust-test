@@ -1,17 +1,17 @@
-use std::cmp::PartialEq;
-use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
-use tokio::sync::broadcast::error::RecvError;
 use crate::streaming::ffmpeg::start_ffmpeg_udp;
 use crate::streaming::traits::{StreamCtrl, StreamSend};
 use crate::streaming::udp::StreamUdpServer;
 use crate::streaming::ws::StreamWsServer;
-use tokio::process::{Child};
+use std::cmp::PartialEq;
+use std::sync::Arc;
+use tokio::process::Child;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{broadcast, Mutex};
 
+pub mod ffmpeg;
 pub mod traits;
 pub mod udp;
 pub mod ws;
-pub mod ffmpeg;
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreamEvtType {
     UDP,
@@ -32,7 +32,6 @@ pub struct StreamServer {
     rx: broadcast::Receiver<StreamEvt>,
     ffmpeg: Option<Child>,
 }
-
 
 impl StreamServer {
     pub fn new(udp_addr: String, ws_addr: String) -> Self {

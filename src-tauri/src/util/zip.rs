@@ -7,7 +7,9 @@ pub fn unzip_file(zip_path: &Path, dest: &Path) -> Result<(), String> {
     let mut archive = ZipArchive::new(file).map_err(|e| format!("解析文件失败,{}", e))?;
 
     for i in 0..archive.len() {
-        let mut zip_file = archive.by_index(i).map_err(|e| format!("读取 zip 条目失败: {}", e))?;
+        let mut zip_file = archive
+            .by_index(i)
+            .map_err(|e| format!("读取 zip 条目失败: {}", e))?;
         let outpath = dest.join(zip_file.sanitized_name());
 
         if zip_file.name().ends_with('/') {

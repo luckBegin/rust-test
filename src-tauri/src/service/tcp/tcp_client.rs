@@ -1,5 +1,5 @@
-use tokio::net::UdpSocket;
 use std::net::SocketAddr;
+use tokio::net::UdpSocket;
 
 pub struct TcpClient {
     server_addr: SocketAddr, // 服务端地址
@@ -12,7 +12,10 @@ impl TcpClient {
         let server_addr: SocketAddr = server_addr_str.parse().expect("Invalid server address");
         // 绑定本地随机端口 (0.0.0.0:0)
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
-        Ok(Self { server_addr, socket })
+        Ok(Self {
+            server_addr,
+            socket,
+        })
     }
 
     // 发送数据给服务器

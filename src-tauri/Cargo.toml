@@ -41,6 +41,7 @@ rdev = { git = "https://github.com/fufesou/rdev" }
 enigo = "0.5.0"
 resolution = "0.2.0"
 mouse_position = "0.1.4"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25.0"

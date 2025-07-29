@@ -2,25 +2,27 @@ use std::error::Error;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 // use rdev::{listen, Event, EventType, Key};
-use enigo::*;
-use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 use crate::GLOBAL::KM_ADDR_UDP;
-use once_cell::sync::Lazy;
+use enigo::*;
 use mouse_position::mouse_position::Mouse as OtherMouse;
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
 use std::option::Option;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
-    CGEventTap, CGEventTapLocation, CGEventTapPlacement, CGEventTapOptions, CGEventType, CallbackResult,
-    CGEventField, EventField,
+    CGEventField, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+    CGEventType, CallbackResult, EventField,
 };
 
 #[cfg(target_os = "macos")]
-use core_graphics::display::{CGMainDisplayID, CGDisplay};
+use core_graphics::display::{CGDisplay, CGMainDisplayID};
 
+use crate::service::tcp::tcp_client::TcpClient;
+use crate::service::tcp::tcp_server::TcpServer;
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
 #[cfg(target_os = "macos")]
@@ -28,12 +30,10 @@ use core_graphics::display::CGPoint;
 #[cfg(target_os = "macos")]
 use objc::runtime::protocol_conformsToProtocol;
 use resolution::current_resolution;
+use std::sync::mpsc::{channel, Sender};
 use tauri::async_runtime::handle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use crate::service::tcp::tcp_server::TcpServer;
-use crate::service::tcp::tcp_client::TcpClient;
-use std::sync::mpsc::{Sender, channel};
 use tokio_tungstenite::tungstenite::accept;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -112,7 +112,6 @@ pub async fn start_km_capture() {
         }
     });
 
-
     tokio::spawn({
         let tcp_server = Arc::clone(&tcp_server);
         async move {
@@ -137,36 +136,33 @@ pub async fn start_km_capture() {
                     CGEventType::KeyUp,
                     CGEventType::KeyDown,
                 ],
-                move |_proxy, _type, event| {
-                    match _type {
-                        CGEventType::MouseMoved => {
-                            let dx = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_X);
-                            let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
-                            let CGPoint { x: cx, y: cy } = event.location();
-                            if should_send_evt(cx, cy) {
-                                let mut km_evt = KmEvent::default();
-                                km_evt.evt_type = KMEventType::MouseMove;
-                                &evt_sender.send((dx as i32, dy as i32, cx, cy, km_evt));
-                            }
-                            CallbackResult::Keep
+                move |_proxy, _type, event| match _type {
+                    CGEventType::MouseMoved => {
+                        let dx = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_X);
+                        let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
+                        let CGPoint { x: cx, y: cy } = event.location();
+                        if should_send_evt(cx, cy) {
+                            let mut km_evt = KmEvent::default();
+                            km_evt.evt_type = KMEventType::MouseMove;
+                            &evt_sender.send((dx as i32, dy as i32, cx, cy, km_evt));
                         }
-                        CGEventType::ScrollWheel
-                        | CGEventType::LeftMouseDown
-                        | CGEventType::LeftMouseUp
-                        | CGEventType::RightMouseDown
-                        | CGEventType::RightMouseUp => mouse_action(&_type, &evt_sender),
-                        CGEventType::KeyDown
-                        | CGEventType::KeyUp => {
-                            let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
-                            keyboard_action(keycode, &_type, &evt_sender)
-                        }
-                        _ => CallbackResult::Keep,
+                        CallbackResult::Keep
                     }
+                    CGEventType::ScrollWheel
+                    | CGEventType::LeftMouseDown
+                    | CGEventType::LeftMouseUp
+                    | CGEventType::RightMouseDown
+                    | CGEventType::RightMouseUp => mouse_action(&_type, &evt_sender),
+                    CGEventType::KeyDown | CGEventType::KeyUp => {
+                        let keycode =
+                            event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
+                        keyboard_action(keycode, &_type, &evt_sender)
+                    }
+                    _ => CallbackResult::Keep,
                 },
-                || {
-                    CFRunLoop::run_current()
-                },
-            ).expect("Failed to install event tap");
+                || CFRunLoop::run_current(),
+            )
+            .expect("Failed to install event tap");
         }
     });
 
@@ -174,10 +170,10 @@ pub async fn start_km_capture() {
         for (dx, dy, cx, cy, km_evt) in evt_receiver {
             match km_evt.evt_type {
                 KMEventType::MouseMove => mouse_move_handle(dx, dy, cx, cy, &tcp_server).await,
-                KMEventType::MouseEvent
-                | KMEventType::KeyUp
-                | KMEventType::KeyDown => km_action_handle(&km_evt, &tcp_server).await,
-                _ => ()
+                KMEventType::MouseEvent | KMEventType::KeyUp | KMEventType::KeyDown => {
+                    km_action_handle(&km_evt, &tcp_server).await
+                }
+                _ => (),
             }
         }
     });
@@ -239,7 +235,10 @@ async fn km_action_handle(km_evt: &KmEvent<MouseData>, socket: &TcpServer) {
 }
 
 #[cfg(target_os = "macos")]
-fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEvent<MouseData>)>) -> CallbackResult {
+fn mouse_action(
+    _type: &CGEventType,
+    sender: &Sender<(i32, i32, f64, f64, KmEvent<MouseData>)>,
+) -> CallbackResult {
     if !*CURSOR_HIDE.lock().unwrap() {
         return CallbackResult::Keep;
     };
@@ -263,7 +262,11 @@ fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEven
 }
 
 #[cfg(target_os = "macos")]
-fn keyboard_action(keycode: i64, _type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEvent<MouseData>)>) -> CallbackResult {
+fn keyboard_action(
+    keycode: i64,
+    _type: &CGEventType,
+    sender: &Sender<(i32, i32, f64, f64, KmEvent<MouseData>)>,
+) -> CallbackResult {
     if !*CURSOR_HIDE.lock().unwrap() {
         return CallbackResult::Keep;
     };
@@ -271,11 +274,13 @@ fn keyboard_action(keycode: i64, _type: &CGEventType, sender: &Sender<(i32, i32,
     let evt_type = match &_type {
         CGEventType::KeyDown => KMEventType::KeyDown,
         CGEventType::KeyUp => KMEventType::KeyUp,
-        _ => KMEventType::None
+        _ => KMEventType::None,
     };
     let mut evt_data = MouseData::default();
     evt_data.key_code = Some(keycode);
-    sender.send((0, 0, 0f64, 0f64, KmEvent { evt_type, evt_data })).unwrap();
+    sender
+        .send((0, 0, 0f64, 0f64, KmEvent { evt_type, evt_data }))
+        .unwrap();
     CallbackResult::Drop
 }
 
@@ -352,12 +357,11 @@ pub async fn start_km_udp_server() {
                                     enigo.button(button.unwrap(), action.unwrap());
                                 }
                             }
-                            KMEventType::KeyUp
-                            | KMEventType::KeyDown => {
+                            KMEventType::KeyUp | KMEventType::KeyDown => {
                                 let dir = match evt.evt_type {
                                     KMEventType::KeyUp => Some(Direction::Release),
                                     KMEventType::KeyDown => Some(Direction::Press),
-                                    _ => None
+                                    _ => None,
                                 };
                                 if let Some(code) = data.key_code {
                                     if dir.is_some() {
@@ -398,7 +402,10 @@ async fn handle_slave_mouse(tcp_client: &mut TcpClient) {
                     key_code: None,
                 },
             };
-            tcp_client.send(serde_json::to_string(&evt).unwrap().as_bytes()).await.unwrap()
+            tcp_client
+                .send(serde_json::to_string(&evt).unwrap().as_bytes())
+                .await
+                .unwrap()
         }
     }
 }
@@ -411,7 +418,9 @@ pub fn get_monitor_size() -> (i32, i32) {
 #[cfg(target_os = "macos")]
 fn hide_cursor() {
     unsafe {
-        let main_display = CGDisplay { id: CGMainDisplayID() };
+        let main_display = CGDisplay {
+            id: CGMainDisplayID(),
+        };
         main_display.hide_cursor().unwrap();
     }
 }
@@ -419,7 +428,9 @@ fn hide_cursor() {
 #[cfg(target_os = "macos")]
 fn show_cursor() {
     unsafe {
-        let main_display = CGDisplay { id: CGMainDisplayID() };
+        let main_display = CGDisplay {
+            id: CGMainDisplayID(),
+        };
         main_display.show_cursor().unwrap();
     }
 }

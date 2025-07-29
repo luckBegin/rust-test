@@ -1,10 +1,10 @@
-use async_trait::async_trait;
-use tokio::net::UdpSocket;
-use tokio::sync::{broadcast, oneshot};
+use crate::streaming::traits::StreamCtrl;
 use crate::streaming::{StreamEvt, StreamEvtType};
-use crate::streaming::traits::{StreamCtrl};
+use async_trait::async_trait;
 use std::clone::Clone;
 use std::sync::Arc;
+use tokio::net::UdpSocket;
+use tokio::sync::{broadcast, oneshot};
 pub struct StreamUdpServer {
     socket: Option<Arc<UdpSocket>>,
     addr: String,
@@ -14,7 +14,12 @@ pub struct StreamUdpServer {
 
 impl StreamUdpServer {
     pub fn new(addr: String, tx: broadcast::Sender<StreamEvt>) -> Self {
-        Self { addr, socket: None, tx, stop_tx: None }
+        Self {
+            addr,
+            socket: None,
+            tx,
+            stop_tx: None,
+        }
     }
 }
 
@@ -43,24 +48,24 @@ impl StreamCtrl for StreamUdpServer {
             let mut buf = vec![0u8; 4096];
             loop {
                 tokio::select! {
-                _ = &mut stop_rx => {
-                    println!("🛑 UDP Server 收到退出信号");
-                    break;
-                }
-                result = socket_clone.recv_from(&mut buf) => {
-                    match result {
-                        Ok((n, _)) => {
-                            let _ = tx.send(StreamEvt {
-                                evt_type: StreamEvtType::UDP,
-                                evt_data: buf[..n].to_vec(),
-                            });
-                        }
-                        Err(e) => {
-                            eprintln!("❌ 接收失败: {}", e);
+                    _ = &mut stop_rx => {
+                        println!("🛑 UDP Server 收到退出信号");
+                        break;
+                    }
+                    result = socket_clone.recv_from(&mut buf) => {
+                        match result {
+                            Ok((n, _)) => {
+                                let _ = tx.send(StreamEvt {
+                                    evt_type: StreamEvtType::UDP,
+                                    evt_data: buf[..n].to_vec(),
+                                });
+                            }
+                            Err(e) => {
+                                eprintln!("❌ 接收失败: {}", e);
+                            }
                         }
                     }
                 }
-            }
             }
         });
         Ok(())

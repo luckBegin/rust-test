@@ -1,9 +1,10 @@
-import {Component, OnInit, TemplateRef, ViewChild} from '@angular/core';
+import {Component, ElementRef, OnInit, TemplateRef, ViewChild} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {RouterOutlet} from '@angular/router';
 import {ShareModule} from "./share.module";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
+import {open} from '@tauri-apps/plugin-dialog';
 
 declare const JSMpeg: any;
 
@@ -92,5 +93,26 @@ export class AppComponent implements OnInit {
 
 	public kmReceive() {
 		invoke("start_km_udp_server").then();
+	}
+
+
+	public async sendFile() {
+		try {
+			const file = await open({multiple: false, directory: false});
+			this.loadingShow = true;
+			await invoke('transfer_file', {
+				filePath: file
+			})
+		} catch (e) {
+			console.log(e);
+		}
+	}
+
+	public openFolder() {
+		invoke("open_folder").then();
+	}
+
+	public receiveFile() {
+		invoke("receive_file").then();
 	}
 }

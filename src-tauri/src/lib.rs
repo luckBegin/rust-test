@@ -1,23 +1,24 @@
-use std::sync::{OnceLock};
+use crate::util::km_detect::watch_device;
+use std::sync::OnceLock;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle,
 };
-use crate::util::km_detect::watch_device;
 
-pub mod command;
-pub mod util;
-pub mod types;
 pub mod GLOBAL;
-pub mod streaming;
+pub mod command;
 pub mod keyboard_mouse;
 pub mod service;
+pub mod streaming;
+pub mod types;
+pub mod util;
 pub static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::async_runtime::spawn(async { watch_device().await });
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             command::devices,
@@ -29,6 +30,9 @@ pub fn run() {
             command::capture::end_live_server,
             command::km_capture::start_km_capture,
             command::km_capture::start_km_udp_server,
+            command::transfer::transfer_file,
+            command::transfer::receive_file,
+            command::transfer::open_folder,
         ])
         .setup(init_app)
         .run(tauri::generate_context!())

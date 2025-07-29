@@ -1,13 +1,15 @@
+use crate::util::km_detect::{detect, HidInfo};
+use crate::GLOBAL_APP_HANDLE;
+use get_if_addrs::get_if_addrs;
 use serde::{Deserialize, Serialize};
 use tauri::async_runtime::handle;
 use tauri::window;
-use tauri::Manager;
 use tauri::Emitter;
-use crate::GLOBAL_APP_HANDLE;
-use crate::util::km_detect::{detect, HidInfo};
-use get_if_addrs::get_if_addrs;
+use tauri::Manager;
 pub mod capture;
 pub mod km_capture;
+pub mod transfer;
+
 #[tauri::command]
 pub async fn devices() -> Result<Vec<HidInfo>, ()> {
     let devices = detect().await;

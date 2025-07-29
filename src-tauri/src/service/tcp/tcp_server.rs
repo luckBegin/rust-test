@@ -1,6 +1,6 @@
-use tokio::net::UdpSocket;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 
 type SharedClients = Arc<Mutex<HashMap<String, String>>>; // peer_id -> socket_addr (string)
