@@ -10,6 +10,7 @@ use crate::GLOBAL::KM_ADDR_UDP;
 use once_cell::sync::Lazy;
 use mouse_position::mouse_position::Mouse as OtherMouse;
 use std::io::ErrorKind;
+use std::option::Option;
 
 #[cfg(target_os = "macos")]
 use core_graphics::event::{
@@ -40,7 +41,8 @@ use tokio_tungstenite::tungstenite::accept;
 pub enum KMEventType {
     MouseMove,
     InitMouseMove,
-    Keyboard,
+    KeyDown,
+    KeyUp,
     MouseEvent,
     MouseBack,
     Ready,
@@ -72,6 +74,7 @@ pub struct MouseData {
     x_ratio: f32,
     y_ratio: f32,
     value: String,
+    key_code: Option<i64>,
 }
 
 impl Default for MouseData {
@@ -82,6 +85,7 @@ impl Default for MouseData {
             x_ratio: 0.0,
             y_ratio: 0.0,
             value: "".to_string(),
+            key_code: None,
         }
     }
 }
@@ -131,6 +135,8 @@ pub async fn start_km_capture() {
                     CGEventType::RightMouseDown,
                     CGEventType::RightMouseUp,
                     CGEventType::ScrollWheel,
+                    CGEventType::KeyUp,
+                    CGEventType::KeyDown,
                 ],
                 move |_proxy, _type, event| {
                     match _type {
@@ -139,7 +145,9 @@ pub async fn start_km_capture() {
                             let dy = event.get_integer_value_field(EventField::MOUSE_EVENT_DELTA_Y);
                             let CGPoint { x: cx, y: cy } = event.location();
                             if should_send_evt(cx, cy) {
-                                &evt_sender.send((dx as i32, dy as i32, cx, cy, KmEvent::default()));
+                                let mut km_evt = KmEvent::default();
+                                km_evt.evt_type = KMEventType::MouseMove;
+                                &evt_sender.send((dx as i32, dy as i32, cx, cy, km_evt));
                             }
                             CallbackResult::Keep
                         }
@@ -148,6 +156,11 @@ pub async fn start_km_capture() {
                         | CGEventType::LeftMouseUp
                         | CGEventType::RightMouseDown
                         | CGEventType::RightMouseUp => mouse_action(&_type, &evt_sender),
+                        CGEventType::KeyDown
+                        | CGEventType::KeyUp => {
+                            let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
+                            keyboard_action(keycode, &_type, &evt_sender)
+                        }
                         _ => CallbackResult::Keep,
                     }
                 },
@@ -161,8 +174,11 @@ pub async fn start_km_capture() {
     let handle = tokio::spawn(async move {
         for (dx, dy, cx, cy, km_evt) in evt_receiver {
             match km_evt.evt_type {
-                KMEventType::None => mouse_move_handle(dx, dy, cx, cy, &tcp_server).await,
-                _ => mouse_action_handle(&km_evt, &tcp_server).await
+                KMEventType::MouseMove => mouse_move_handle(dx, dy, cx, cy, &tcp_server).await,
+                KMEventType::MouseEvent
+                | KMEventType::KeyUp
+                | KMEventType::KeyDown => km_action_handle(&km_evt, &tcp_server).await,
+                _ => ()
             }
         }
     });
@@ -202,6 +218,7 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
             x_ratio: cx as f32 / width as f32,
             y_ratio: cy as f32 / height as f32,
             value: "".to_string(),
+            key_code: None,
         },
     };
     if (*IS_FIRST.lock().unwrap()) {
@@ -216,7 +233,7 @@ async fn mouse_move_handle(dx: i32, dy: i32, cx: f64, cy: f64, socket: &TcpServe
     };
 }
 
-async fn mouse_action_handle(km_evt: &KmEvent<MouseData>, socket: &TcpServer) {
+async fn km_action_handle(km_evt: &KmEvent<MouseData>, socket: &TcpServer) {
     if let Ok(json) = serde_json::to_string(km_evt) {
         socket.broadcast(json.as_bytes()).await.unwrap()
     }
@@ -243,7 +260,24 @@ fn mouse_action(_type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEven
         evt_data,
     };
     sender.send((0, 0, 0f64, 0f64, km_evt)).unwrap();
-    CallbackResult::Keep
+    CallbackResult::Drop
+}
+
+#[cfg(target_os = "macos")]
+fn keyboard_action(keycode: i64, _type: &CGEventType, sender: &Sender<(i32, i32, f64, f64, KmEvent<MouseData>)>) -> CallbackResult {
+    if !*CURSOR_HIDE.lock().unwrap() {
+        return CallbackResult::Keep;
+    };
+
+    let evt_type = match &_type {
+        CGEventType::KeyDown => KMEventType::KeyDown,
+        CGEventType::KeyUp => KMEventType::KeyUp,
+        _ => KMEventType::None
+    };
+    let mut evt_data = MouseData::default();
+    evt_data.key_code = Some(keycode);
+    sender.send((0, 0, 0f64, 0f64, KmEvent { evt_type, evt_data })).unwrap();
+    CallbackResult::Drop
 }
 
 #[cfg(target_os = "windows")]
@@ -319,6 +353,10 @@ pub async fn start_km_udp_server() {
                                     enigo.button(button.unwrap(), action.unwrap());
                                 }
                             }
+                            KMEventType::KeyUp
+                            | KMEventType::KeyDown => {
+                                println!("evt: {:?}, {:?}", evt.evt_type, data);
+                            }
                             _ => {
                                 println!("其他类型事件");
                             }
@@ -349,6 +387,7 @@ async fn handle_slave_mouse(tcp_client: &mut TcpClient) {
                     x_ratio: x as f32 / width as f32,
                     y_ratio: y as f32 / height as f32,
                     value: "".to_string(),
+                    key_code: None,
                 },
             };
             tcp_client.send(serde_json::to_string(&evt).unwrap().as_bytes()).await.unwrap()
@@ -378,9 +417,49 @@ fn show_cursor() {
     }
 }
 
-
 #[cfg(target_os = "windows")]
 fn hide_cursor() {}
 
 #[cfg(target_os = "windows")]
 fn show_cursor() {}
+
+fn mac_keycode_to_enigo_key(keycode: i64) -> Key {
+    match keycode {
+        0 => Key::KeyA,
+        1 => Key::KeyS,
+        2 => Key::KeyD,
+        3 => Key::KeyF,
+        4 => Key::KeyH,
+        5 => Key::KeyG,
+        6 => Key::KeyZ,
+        7 => Key::KeyX,
+        8 => Key::KeyC,
+        9 => Key::KeyV,
+        11 => Key::KeyB,
+        12 => Key::KeyQ,
+        13 => Key::KeyW,
+        14 => Key::KeyE,
+        15 => Key::KeyR,
+        16 => Key::KeyY,
+        17 => Key::KeyT,
+        31 => Key::KeyO,
+        32 => Key::KeyU,
+        34 => Key::KeyI,
+        35 => Key::KeyP,
+        37 => Key::KeyL,
+        38 => Key::KeyJ,
+        40 => Key::KeyK,
+        45 => Key::KeyN,
+        46 => Key::KeyM,
+        36 => Key::Return,
+        48 => Key::Tab,
+        49 => Key::Space,
+        51 => Key::Backspace,
+        53 => Key::Escape,
+        123 => Key::LeftArrow,
+        124 => Key::RightArrow,
+        125 => Key::DownArrow,
+        126 => Key::UpArrow,
+        _ => Key::Unknown(keycode as u32),
+    }
+}
