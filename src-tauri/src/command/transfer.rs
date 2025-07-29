@@ -106,11 +106,22 @@ pub async fn receive_file() {
     });
 }
 
+#[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn open_folder() {
     let mut full_path = PathBuf::from(&*GLOBAL::HOME_DIR);
     full_path.push(GLOBAL::APP_FOLDER);
     std::process::Command::new("open")
+        .arg(full_path)
+        .spawn()
+        .expect("打开文件夹失败");
+}
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn open_folder() {
+    let mut full_path = PathBuf::from(&*GLOBAL::HOME_DIR);
+    full_path.push(GLOBAL::APP_FOLDER);
+    std::process::Command::new("explorer")
         .arg(full_path)
         .spawn()
         .expect("打开文件夹失败");
