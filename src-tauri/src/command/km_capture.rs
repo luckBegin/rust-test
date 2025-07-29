@@ -290,25 +290,34 @@ pub async fn start_km_udp_server() {
                                 handle_slave_mouse(&mut socket).await;
                             }
                             KMEventType::MouseEvent => {
-                                let mut button: Button;
-                                let mut action: Direction;
-
+                                let mut button: Option<Button> = None;
+                                let mut action: Option<Direction> = None;
                                 match data.value.as_str() {
                                     "LeftMouseDown" => {
-                                        button = Button::Left;
-                                        action = Direction::Press
+                                        button = Some(Button::Left);
+                                        action = Some(Direction::Press);
                                     }
                                     "LeftMouseUp" => {
-                                        button = Button::Left;
-                                        action = Direction::Release;
+                                        button = Some(Button::Left);
+                                        action = Some(Direction::Release);
+                                    }
+                                    "RightMouseUp" => {
+                                        button = Some(Button::Right);
+                                        action = Some(Direction::Release);
+                                    }
+                                    "RightMouseDown" => {
+                                        button = Some(Button::Right);
+                                        action = Some(Direction::Release);
                                     }
                                     _ => {
-                                        button = Button::Left;
-                                        action = Direction::Click;
+                                        // button = Button::Left;
+                                        // action = Direction::Click;
                                     }
                                 };
-                                enigo.button(button, action);
-                                println!("data type {:?}", data)
+                                if (button.is_some() && action.is_some()) {
+                                    println!("data type {:?}", data);
+                                    enigo.button(button.unwrap(), action.unwrap());
+                                }
                             }
                             _ => {
                                 println!("其他类型事件");
