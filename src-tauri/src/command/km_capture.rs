@@ -258,7 +258,7 @@ fn mouse_action(
         evt_data,
     };
     sender.send((0, 0, 0f64, 0f64, km_evt)).unwrap();
-    CallbackResult::Drop
+    CallbackResult::Keep
 }
 
 #[cfg(target_os = "macos")]

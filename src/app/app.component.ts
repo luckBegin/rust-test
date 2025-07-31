@@ -121,8 +121,8 @@ export class AppComponent implements OnInit {
 	}
 
 	public ip = {
-		main: '192.168.0.28',
-		sub: '192.168.0.200'
+		main: '192.168.0.200',
+		sub: '192.168.0.28'
 	}
 
 	public setting() {
