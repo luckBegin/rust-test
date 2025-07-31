@@ -23,6 +23,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             command::devices,
             command::find_lan_device,
+            command::set_ip,
             command::capture::check_if_ffmpeg,
             command::capture::download_ffmpeg,
             command::capture::start_live_server,

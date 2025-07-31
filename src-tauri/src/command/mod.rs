@@ -6,6 +6,8 @@ use tauri::async_runtime::handle;
 use tauri::window;
 use tauri::Emitter;
 use tauri::Manager;
+use crate::GLOBAL::IP_CONFIG;
+
 pub mod capture;
 pub mod km_capture;
 pub mod transfer;
@@ -48,4 +50,25 @@ pub async fn find_lan_device() {
     for iface in get_if_addrs::get_if_addrs().unwrap() {
         println!("{:#?}", iface.addr.ip());
     }
+}
+
+
+#[derive(Debug, Deserialize)]
+pub struct IpConfig {
+    main: String,
+    sub: String,
+}
+
+impl Default for IpConfig {
+    fn default() -> Self {
+        Self {
+            main: "0.0.0.0".to_string(),
+            sub: "0.0.0.0".to_string(),
+        }
+    }
+}
+#[tauri::command]
+pub fn set_ip(data: IpConfig) {
+    let mut ip_config = IP_CONFIG.write().unwrap();
+    *ip_config = data;
 }

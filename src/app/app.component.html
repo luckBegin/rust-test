@@ -38,6 +38,19 @@
 		<button nz-button nzType="primary" style="margin-right: 10px" (click)="openFolder()">
 			打开目录
 		</button>
+
+	</div>
+	<div class="setting">
+		<div class="item">
+			<span>主机IP: </span>
+			<input type="text" nz-input placeholder="请输入主机IP" [(ngModel)] = 'ip.main'>
+		</div>
+
+		<div class="item">
+			<span>从机IP:</span>
+			<input type="text" nzType="primary" nz-input placeholder="请输入从机IP" [(ngModel)] = 'ip.sub'>
+		</div>
+		<button nz-button (click)="setting()">设置</button>
 	</div>
 	<div class="body">
 		<div class="mirror-mode" *ngIf="mode==='mirror'">

@@ -2,7 +2,7 @@ use std::error::Error;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 // use rdev::{listen, Event, EventType, Key};
-use crate::GLOBAL::KM_ADDR_UDP;
+use crate::GLOBAL::{IP_CONFIG, KM_ADDR_UDP};
 use enigo::*;
 use mouse_position::mouse_position::Mouse as OtherMouse;
 use once_cell::sync::Lazy;
@@ -162,7 +162,7 @@ pub async fn start_km_capture() {
                 },
                 || CFRunLoop::run_current(),
             )
-            .expect("Failed to install event tap");
+                .expect("Failed to install event tap");
         }
     });
 
@@ -296,7 +296,12 @@ pub async fn start_km_capture() {
 
 #[tauri::command]
 pub async fn start_km_udp_server() {
-    let mut socket = TcpClient::connect("192.168.0.200:12345".to_string())
+    let ip = {
+        let ip_config = IP_CONFIG.read().unwrap(); // 锁只在这个 block 里生效
+        format!("{}:{}", ip_config.main, "12345")
+    };
+
+    let mut socket = TcpClient::connect(ip)
         .await
         .expect("连接失败");
     let mut buf = [0u8; 1024];

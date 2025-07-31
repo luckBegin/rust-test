@@ -5,6 +5,7 @@ import {ShareModule} from "./share.module";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {open} from '@tauri-apps/plugin-dialog';
+import {NzMessageService} from 'ng-zorro-antd/message';
 
 declare const JSMpeg: any;
 
@@ -13,11 +14,12 @@ declare const JSMpeg: any;
 	standalone: true,
 	templateUrl: './app.component.html',
 	styleUrls: ['./app.component.less'],
-	imports: [CommonModule, RouterOutlet, ShareModule],
+	imports: [RouterOutlet, ShareModule],
 })
 export class AppComponent implements OnInit {
 	constructor(
-		private change: ChangeDetectorRef
+		private change: ChangeDetectorRef,
+		private message: NzMessageService
 	) {
 	}
 
@@ -116,5 +118,20 @@ export class AppComponent implements OnInit {
 
 	public receiveFile() {
 		invoke("receive_file").then();
+	}
+
+	public ip = {
+		main: '192.168.0.28',
+		sub: '192.168.0.200'
+	}
+
+	public setting() {
+		if (!this.ip.main || !this.ip.sub) {
+			this.message.error("IP未填写");
+			return
+		}
+		invoke("set_ip", {data: this.ip}).then( () => {
+			this.message.success("设置成功");
+		});
 	}
 }
